@@ -1,59 +1,42 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# HR Backend (نظام إدارة القوى البشرية)
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+The backend of the personnel system that replaces the workbook «نظام إدارة القوى البشرية — ملف واحد».
+A Laravel 12 REST API on PostgreSQL 16, built the same way as the recruitment system: a modular monolith
+(`app/Modules/*`), constraints in the database, append-only history, Arabic messages, device-bound staff login.
 
-## About Laravel
+- **Status:** Step 1 of 7 (foundation, staff accounts and roles, device-bound login, audit log).
+- **Documentation:** [`docs/code-documentation.md`](docs/code-documentation.md) (what and how),
+  [`docs/decisions.md`](docs/decisions.md) (why, and the open questions).
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Quick start (development)
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+```bash
+composer install
+cp .env.example .env && php artisan key:generate
+psql -U postgres -c "CREATE DATABASE hr;" -c "CREATE DATABASE hr_test;"
+php artisan migrate --seed          # demo accounts: admin, manager, entry, entry.two — password Password1!
+php artisan serve
+php artisan test                    # 63 tests on PostgreSQL
+```
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+Log in like the desktop app will, with the reference client:
 
-## Learning Laravel
+```bash
+node tools/device-client.mjs register http://127.0.0.1:8000            # prints the device id and fingerprint
+php artisan staff:approve-device <device-id> admin --fingerprint="…"
+node tools/device-client.mjs login http://127.0.0.1:8000 <device-id> admin 'Password1!'
+```
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+API documentation (local only): <http://127.0.0.1:8000/docs/api>.
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+## Plan
 
-## Laravel Sponsors
-
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
-
-### Premium Partners
-
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
-
-## Contributing
-
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
-
-## Code of Conduct
-
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
-
-## Security Vulnerabilities
-
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
-
-## License
-
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+| Step | Builds |
+| ---- | ------ |
+| 1 ✓ | Foundation, staff identity and roles, device-bound login, access management, audit log |
+| 2 | Settings: the 29 lists, the organisational structure, holidays, work settings |
+| 3 | Employees: the 159 fields, update cycles, completeness, review periods, change history |
+| 4 | Records: movements, monthly attendance, conduct, debts |
+| 5 | Documents: the 13 attachments as uploaded files |
+| 6 | Views and reports: the per-person forms as PDF, the two dashboards, Excel exports |
+| 7 | Import of existing workbooks; on-premises deployment guide |
