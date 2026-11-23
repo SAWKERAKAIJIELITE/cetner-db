@@ -4,24 +4,30 @@ namespace Tests\Feature\Settings;
 
 use App\Modules\Identity\Enums\StaffRole;
 use App\Modules\Settings\Database\Seeders\SettingsSeeder;
-use App\Modules\Settings\Models\LookupItem;
-use App\Modules\Settings\Models\LookupList;
+use App\Modules\Settings\Models\ListItem;
 use App\Modules\Settings\Support\ListCatalogue;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class LookupListTest extends TestCase
 {
-    private function item(string $list, string $label): LookupItem
+    private function item(string $list, string $label): ListItem
     {
-        return LookupItem::query()->whereHas('list', fn ($q) => $q->where('key', $list))->where('label', $label)->sole();
+        return ListItem::queryFor($list)->where('label', $label)->sole();
     }
 
     public function test_the_workbooks_lists_are_seeded_in_order_with_their_system_items(): void
     {
-        $this->assertSame(27, LookupList::query()->count());
-        $this->assertSame(count(ListCatalogue::LISTS), LookupList::query()->count());
+        $this->assertCount(27, ListCatalogue::LISTS);
+
+        foreach (ListCatalogue::keys() as $key) {
+            $this->assertTrue(Schema::hasTable(ListCatalogue::table($key)), "the list {$key} has its own table");
+        }
+
+        $this->assertSame(8, DB::table('blood_types')->count());
+        $this->assertSame(15, DB::table('movement_types')->count());
 
         $response = $this->actingAsStaff($this->staffUser())->getJson(self::API.'/settings/lists/job_status')->assertOk()
             ->assertJsonPath('data.label', 'الحالة الوظيفية')
@@ -86,8 +92,9 @@ class LookupListTest extends TestCase
         $this->putJson(self::API."/settings/lists/work_nature/items/{$item->id}", ['label' => 'توجيهي'])->assertUnprocessable();
         $this->putJson(self::API."/settings/lists/work_nature/items/{$item->id}", [])->assertUnprocessable();
 
-        // An item is reached through its own list only.
-        $this->putJson(self::API."/settings/lists/gender/items/{$item->id}", ['label' => 'x'])->assertNotFound();
+        // An item is reached through its own list only: each list has its own table and its own ids.
+        $this->putJson(self::API.'/settings/lists/gender/items/999', ['label' => 'x'])->assertNotFound();
+        $this->putJson(self::API."/settings/lists/no_such_list/items/{$item->id}", ['label' => 'x'])->assertNotFound();
 
         $this->assertDatabaseHas('audit_events', ['event' => 'settings.list_item_updated']);
     }
@@ -123,14 +130,26 @@ class LookupListTest extends TestCase
             ->assertJsonPath('data.code', 'discharged');
 
         $this->expectException(QueryException::class);
-        DB::table('lookup_items')->where('id', $item->id)->update(['archived_at' => now()]);
+        DB::table('job_statuses')->where('id', $item->id)->update(['archived_at' => now()]);
+    }
+
+    public function test_each_list_keeps_its_own_items_and_the_same_word_in_two_lists_is_two_rows(): void
+    {
+        $this->actingAsStaff($this->admin());
+
+        // «عمل حر» is an item of two of the workbook's lists.
+        $this->assertSame(1, DB::table('external_entity_types')->where('label', 'عمل حر')->count());
+        $this->assertSame(1, DB::table('external_link_types')->where('label', 'عمل حر')->count());
+
+        $id = $this->postJson(self::API.'/settings/lists/job_title/items', ['label' => 'محاسب'])->assertCreated()->json('data.id');
+        $this->assertSame('محاسب', DB::table('job_titles')->where('id', $id)->value('label'));
+        $this->assertSame('job_title', ListItem::queryFor('job_title')->findOrFail($id)->listKey());
     }
 
     public function test_the_active_items_are_reordered_together(): void
     {
         $this->actingAsStaff($this->admin());
-        $list = LookupList::query()->where('key', 'marital_status')->sole();
-        $ids = $list->items()->pluck('id')->all();
+        $ids = ListItem::queryFor('marital_status')->orderBy('sort_order')->pluck('id')->all();
 
         $this->putJson(self::API.'/settings/lists/marital_status/order', ['item_ids' => array_reverse($ids)])->assertOk()
             ->assertJsonPath('data.items.0.label', 'أرمل');
@@ -146,12 +165,12 @@ class LookupListTest extends TestCase
         $this->actingAsStaff($this->admin());
         $archived = $this->item('blood_type', 'O-');
         $this->postJson(self::API."/settings/lists/blood_type/items/{$archived->id}/archive")->assertOk();
-        LookupItem::query()->where('code', 'reward')->update(['code' => null]);
+        ListItem::queryFor('movement_type')->where('code', 'reward')->update(['code' => null]);
 
         $this->seed(SettingsSeeder::class);
 
         $this->assertTrue($archived->refresh()->isArchived());
-        $this->assertSame('مكافأة', LookupItem::query()->where('code', 'reward')->sole()->label);
-        $this->assertSame(1, LookupItem::query()->where('label', 'مكافأة')->count());
+        $this->assertSame('مكافأة', ListItem::queryFor('movement_type')->where('code', 'reward')->sole()->label);
+        $this->assertSame(1, ListItem::queryFor('movement_type')->where('label', 'مكافأة')->count());
     }
 }

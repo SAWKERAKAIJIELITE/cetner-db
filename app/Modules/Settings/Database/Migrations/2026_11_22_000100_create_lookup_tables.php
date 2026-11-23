@@ -6,57 +6,56 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * The managed lists of «الإعدادات» (D-024): the kinds are fixed by the code, their items are data.
- * Integer keys (D-003's exception); items are archived, never deleted (D-007).
+ * The managed lists of «الإعدادات»: one table per list, all the same shape (D-024), so that every field
+ * of the employee's file is a plain foreign key to its own list. Integer keys (D-003's exception);
+ * items are archived, never deleted (D-007).
+ *
+ * The names are written out here, not read from ListCatalogue: a migration must keep doing what it did.
  */
 return new class extends Migration
 {
+    public const TABLES = [
+        'genders', 'blood_types', 'marital_statuses', 'education_levels', 'current_studies', 'study_years',
+        'position_levels', 'job_titles', 'employee_statuses', 'job_statuses', 'org_stages', 'org_stage_levels',
+        'contract_types', 'work_schedules', 'health_statuses', 'ability_levels', 'housing_types',
+        'vehicle_ownerships', 'guardian_relations', 'external_entity_types', 'external_link_types',
+        'external_schedules', 'movement_types', 'conduct_types', 'conduct_statuses', 'debt_types', 'work_natures',
+    ];
+
     public function up(): void
     {
-        Schema::create('lookup_lists', function (Blueprint $table) {
-            $table->id();
-            $table->string('key', 50)->unique();
-            $table->string('label_ar', 150);
-            // Which fields of the file use it, shown to whoever edits it.
-            $table->string('description_ar', 500)->nullable();
-            $table->timestampsTz();
-        });
+        foreach (self::TABLES as $name) {
+            Schema::create($name, function (Blueprint $table) {
+                $table->id();
+                $table->string('label', 150);
+                // ArabicText::searchKey(label): the same word typed differently is one item.
+                $table->string('search_key', 150)->unique();
+                // Set by the catalogue only: the code's logic refers to this item (D-025).
+                $table->string('code', 50)->nullable()->unique();
+                $table->integer('sort_order')->default(0);
+                $table->foreignUuid('created_by')->nullable()->constrained('staff_users')->restrictOnDelete();
+                $table->timestampTz('archived_at')->nullable();
+                $table->foreignUuid('archived_by')->nullable()->constrained('staff_users')->restrictOnDelete();
+                $table->timestampsTz();
 
-        DB::statement("ALTER TABLE lookup_lists ADD CONSTRAINT lookup_lists_key_format CHECK (key ~ '^[a-z_]+$')");
+                $table->index('sort_order');
+            });
 
-        Schema::create('lookup_items', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('lookup_list_id')->constrained('lookup_lists')->restrictOnDelete();
-            $table->string('label', 150);
-            // ArabicText::searchKey(label): the same word typed differently is one item.
-            $table->string('search_key', 150);
-            // Set by the catalogue only: the code's logic refers to this item (D-025).
-            $table->string('code', 50)->nullable();
-            $table->integer('sort_order')->default(0);
-            $table->foreignUuid('created_by')->nullable()->constrained('staff_users')->restrictOnDelete();
-            $table->timestampTz('archived_at')->nullable();
-            $table->foreignUuid('archived_by')->nullable()->constrained('staff_users')->restrictOnDelete();
-            $table->timestampsTz();
-
-            $table->unique(['lookup_list_id', 'search_key']);
-            $table->index(['lookup_list_id', 'sort_order']);
-        });
-
-        DB::statement('CREATE UNIQUE INDEX lookup_items_one_code_per_list ON lookup_items (lookup_list_id, code) WHERE code IS NOT NULL');
-
-        DB::statement(<<<'SQL'
-            ALTER TABLE lookup_items
-                ADD CONSTRAINT lookup_items_label_not_blank CHECK (btrim(label) <> ''),
-                ADD CONSTRAINT lookup_items_code_format CHECK (code IS NULL OR code ~ '^[a-z_]+$'),
-                ADD CONSTRAINT lookup_items_system_items_stay CHECK (code IS NULL OR archived_at IS NULL),
-                ADD CONSTRAINT lookup_items_archived_by CHECK (archived_at IS NOT NULL OR archived_by IS NULL),
-                ADD CONSTRAINT lookup_items_sort_order CHECK (sort_order >= 0)
-            SQL);
+            DB::statement(<<<SQL
+                ALTER TABLE {$name}
+                    ADD CONSTRAINT {$name}_label_not_blank CHECK (btrim(label) <> ''),
+                    ADD CONSTRAINT {$name}_code_format CHECK (code IS NULL OR code ~ '^[a-z_]+$'),
+                    ADD CONSTRAINT {$name}_system_items_stay CHECK (code IS NULL OR archived_at IS NULL),
+                    ADD CONSTRAINT {$name}_archived_by CHECK (archived_at IS NOT NULL OR archived_by IS NULL),
+                    ADD CONSTRAINT {$name}_sort_order CHECK (sort_order >= 0)
+                SQL);
+        }
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('lookup_items');
-        Schema::dropIfExists('lookup_lists');
+        foreach (array_reverse(self::TABLES) as $name) {
+            Schema::dropIfExists($name);
+        }
     }
 };

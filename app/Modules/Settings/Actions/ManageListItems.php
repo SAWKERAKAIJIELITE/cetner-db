@@ -4,8 +4,8 @@ namespace App\Modules\Settings\Actions;
 
 use App\Modules\Audit\Support\AuditTrail;
 use App\Modules\Identity\Models\StaffUser;
-use App\Modules\Settings\Models\LookupItem;
-use App\Modules\Settings\Models\LookupList;
+use App\Modules\Settings\Models\ListItem;
+use App\Modules\Settings\Support\ManagedList;
 use App\Support\ArabicText;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -16,22 +16,21 @@ use Illuminate\Validation\ValidationException;
  */
 final class ManageListItems
 {
-    public function add(LookupList $list, string $label, ?int $sortOrder, StaffUser $actor): LookupItem
+    public function add(ManagedList $list, string $label, ?int $sortOrder, StaffUser $actor): ListItem
     {
         return DB::transaction(function () use ($list, $label, $sortOrder, $actor) {
             $this->lockList($list);
             $this->refuseDuplicate($list, $label);
 
-            $item = new LookupItem(['label' => $label]);
+            $item = ListItem::forList($list->key)->fill(['label' => $label]);
             $item->forceFill([
-                'lookup_list_id' => $list->getKey(),
-                'sort_order' => $sortOrder ?? ((int) $list->items()->max('sort_order') + 1),
+                'sort_order' => $sortOrder ?? ((int) $list->query()->max('sort_order') + 1),
                 'created_by' => $actor->getKey(),
             ])->save();
 
             AuditTrail::record('settings.list_item_added', $actor, [
                 'list' => $list->key,
-                'lookup_item_id' => $item->getKey(),
+                'list_item_id' => $item->getKey(),
                 'label' => $item->label,
             ]);
 
@@ -39,17 +38,16 @@ final class ManageListItems
         });
     }
 
-    public function update(LookupItem $item, ?string $label, ?int $sortOrder, StaffUser $actor): LookupItem
+    public function update(ManagedList $list, int $itemId, ?string $label, ?int $sortOrder, StaffUser $actor): ListItem
     {
-        return DB::transaction(function () use ($item, $label, $sortOrder, $actor) {
-            $list = $item->list;
+        return DB::transaction(function () use ($list, $itemId, $label, $sortOrder, $actor) {
             $this->lockList($list);
-            $item = LookupItem::query()->lockForUpdate()->findOrFail($item->getKey());
+            $item = $list->query()->lockForUpdate()->findOrFail($itemId);
             $before = ['label' => $item->label, 'sort_order' => $item->sort_order];
 
             if ($label !== null) {
                 $this->refuseDuplicate($list, $label, $item);
-                $item->label = $label;
+                $item->label = ListItem::clean($label);
             }
 
             if ($sortOrder !== null) {
@@ -61,7 +59,7 @@ final class ManageListItems
 
                 AuditTrail::record('settings.list_item_updated', $actor, [
                     'list' => $list->key,
-                    'lookup_item_id' => $item->getKey(),
+                    'list_item_id' => $item->getKey(),
                     'from' => $before,
                     'to' => ['label' => $item->label, 'sort_order' => $item->sort_order],
                 ]);
@@ -71,10 +69,10 @@ final class ManageListItems
         });
     }
 
-    public function archive(LookupItem $item, StaffUser $actor): LookupItem
+    public function archive(ManagedList $list, int $itemId, StaffUser $actor): ListItem
     {
-        return DB::transaction(function () use ($item, $actor) {
-            $item = LookupItem::query()->lockForUpdate()->findOrFail($item->getKey());
+        return DB::transaction(function () use ($list, $itemId, $actor) {
+            $item = $list->query()->lockForUpdate()->findOrFail($itemId);
 
             if ($item->isSystem()) {
                 throw ValidationException::withMessages(['item' => __('settings.system_item')]);
@@ -87,8 +85,8 @@ final class ManageListItems
             $item->forceFill(['archived_at' => now(), 'archived_by' => $actor->getKey()])->save();
 
             AuditTrail::record('settings.list_item_archived', $actor, [
-                'list' => $item->list->key,
-                'lookup_item_id' => $item->getKey(),
+                'list' => $list->key,
+                'list_item_id' => $item->getKey(),
                 'label' => $item->label,
             ]);
 
@@ -96,10 +94,10 @@ final class ManageListItems
         });
     }
 
-    public function restore(LookupItem $item, StaffUser $actor): LookupItem
+    public function restore(ManagedList $list, int $itemId, StaffUser $actor): ListItem
     {
-        return DB::transaction(function () use ($item, $actor) {
-            $item = LookupItem::query()->lockForUpdate()->findOrFail($item->getKey());
+        return DB::transaction(function () use ($list, $itemId, $actor) {
+            $item = $list->query()->lockForUpdate()->findOrFail($itemId);
 
             if (! $item->isArchived()) {
                 throw ValidationException::withMessages(['item' => __('settings.not_archived')]);
@@ -108,8 +106,8 @@ final class ManageListItems
             $item->forceFill(['archived_at' => null, 'archived_by' => null])->save();
 
             AuditTrail::record('settings.list_item_restored', $actor, [
-                'list' => $item->list->key,
-                'lookup_item_id' => $item->getKey(),
+                'list' => $list->key,
+                'list_item_id' => $item->getKey(),
                 'label' => $item->label,
             ]);
 
@@ -122,11 +120,11 @@ final class ManageListItems
      *
      * @param  list<int>  $ids
      */
-    public function reorder(LookupList $list, array $ids, StaffUser $actor): void
+    public function reorder(ManagedList $list, array $ids, StaffUser $actor): void
     {
         DB::transaction(function () use ($list, $ids, $actor) {
             $this->lockList($list);
-            $active = LookupItem::query()->where('lookup_list_id', $list->getKey())->active()->pluck('id')->all();
+            $active = $list->query()->whereNull('archived_at')->pluck('id')->all();
 
             sort($active);
             $given = $ids;
@@ -137,31 +135,29 @@ final class ManageListItems
             }
 
             foreach (array_values($ids) as $position => $id) {
-                LookupItem::query()->whereKey($id)->update(['sort_order' => $position + 1]);
+                $list->query()->whereKey($id)->update(['sort_order' => $position + 1]);
             }
 
             $last = count($ids);
-            LookupItem::query()->where('lookup_list_id', $list->getKey())->whereNotNull('archived_at')
-                ->orderBy('sort_order')->orderBy('id')->pluck('id')
-                ->each(function (int $id) use (&$last) {
-                    LookupItem::query()->whereKey($id)->update(['sort_order' => ++$last]);
+            $list->query()->whereNotNull('archived_at')->orderBy('sort_order')->orderBy('id')->pluck('id')
+                ->each(function (int $id) use (&$last, $list) {
+                    $list->query()->whereKey($id)->update(['sort_order' => ++$last]);
                 });
 
-            AuditTrail::record('settings.list_reordered', $actor, ['list' => $list->key, 'lookup_item_ids' => array_values($ids)]);
+            AuditTrail::record('settings.list_reordered', $actor, ['list' => $list->key, 'list_item_ids' => array_values($ids)]);
         });
     }
 
     /** Serialises the changes of one list, so two people cannot add the same word at once. */
-    private function lockList(LookupList $list): void
+    private function lockList(ManagedList $list): void
     {
-        LookupList::query()->whereKey($list->getKey())->lockForUpdate()->first();
+        DB::select('SELECT pg_advisory_xact_lock(hashtext(?))', ['managed_list.'.$list->key]);
     }
 
-    private function refuseDuplicate(LookupList $list, string $label, ?LookupItem $except = null): void
+    private function refuseDuplicate(ManagedList $list, string $label, ?ListItem $except = null): void
     {
-        $existing = LookupItem::query()
-            ->where('lookup_list_id', $list->getKey())
-            ->where('search_key', ArabicText::searchKey(trim(preg_replace('/\s+/u', ' ', $label) ?? $label)))
+        $existing = $list->query()
+            ->where('search_key', ArabicText::searchKey(ListItem::clean($label)))
             ->when($except, fn ($q) => $q->whereKeyNot($except->getKey()))
             ->first();
 

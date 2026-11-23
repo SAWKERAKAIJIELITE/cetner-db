@@ -2,12 +2,12 @@
 
 namespace App\Modules\Settings\Http\Resources;
 
-use App\Modules\Settings\Models\LookupItem;
+use App\Modules\Settings\Models\ListItem;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * @mixin LookupItem
+ * @mixin ListItem
  */
 class LookupItemResource extends JsonResource
 {

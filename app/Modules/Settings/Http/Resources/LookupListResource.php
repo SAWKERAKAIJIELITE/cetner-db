@@ -2,12 +2,12 @@
 
 namespace App\Modules\Settings\Http\Resources;
 
-use App\Modules\Settings\Models\LookupList;
+use App\Modules\Settings\Support\ManagedList;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * @mixin LookupList
+ * @mixin ManagedList
  */
 class LookupListResource extends JsonResource
 {
@@ -15,10 +15,10 @@ class LookupListResource extends JsonResource
     {
         return [
             'key' => $this->key,
-            'label' => $this->label_ar,
+            'label' => $this->label,
             /** The fields that use it. */
-            'used_by' => $this->description_ar,
-            'items' => LookupItemResource::collection($this->whenLoaded('items')),
+            'used_by' => $this->usedBy,
+            'items' => LookupItemResource::collection($this->items ?? collect()),
         ];
     }
 }
