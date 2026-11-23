@@ -18,10 +18,15 @@ class RolesAndPermissionsSeeder extends Seeder
     public const PERMISSIONS = [
         // Employees (Step 3)
         'employees.view' => ['عرض ملفات الموظفين', true],
-        'employees.manage' => ['إضافة الموظفين وتحديث بياناتهم ودورات التحديث', false],
+        'employees.create' => ['إضافة موظفين جدد', false],
+        'employees.update' => ['تحديث بيانات الموظفين ودورات التحديث', false],
+        // The supervisor's review of every entry and change (Steps 3 and 4, D-023)
+        'entries.review' => ['مراجعة الإدخالات والتعديلات واعتمادها أو ردّها', false],
         // The employees' records: movements, monthly attendance, conduct, debts (Step 4)
         'records.view' => ['عرض سجلات الحركات والدوام والسلوك والديون', true],
-        'records.manage' => ['إدخال سجلات الحركات والدوام والسلوك والديون وتصحيحها', false],
+        'records.create' => ['إدخال سجلات الحركات والدوام والسلوك والديون', false],
+        'records.update' => ['تصحيح سجلات الحركات والدوام والسلوك والديون', false],
+        'records.delete' => ['حذف سجل أُدخل خطأً', false],
         // Documents (Step 5)
         'documents.view' => ['عرض وثائق الموظفين وتنزيلها', true],
         'documents.manage' => ['رفع وثائق الموظفين وأرشفتها', false],
@@ -41,10 +46,20 @@ class RolesAndPermissionsSeeder extends Seeder
     /** Defaults when a role is created. The administrator's role stores none: it holds every permission. */
     public const ROLES = [
         StaffRole::DataEntry->value => [
-            'employees.view', 'employees.manage',
-            'records.view', 'records.manage',
+            'employees.view', 'employees.create', 'employees.update',
+            'records.view', 'records.create', 'records.update', 'records.delete',
             'documents.view', 'documents.manage',
             'imports.manage',
+            'audit.view_related',
+        ],
+        // Reads, updates and reviews; does not add or delete (owner, D-023).
+        StaffRole::Supervisor->value => [
+            'employees.view', 'employees.update',
+            'records.view', 'records.update',
+            'documents.view',
+            'entries.review',
+            'settings.manage',
+            'reports.view',
             'audit.view_related',
         ],
         StaffRole::GeneralManager->value => [

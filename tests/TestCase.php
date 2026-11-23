@@ -2,7 +2,7 @@
 
 namespace Tests;
 
-use App\Modules\Identity\Database\Seeders\RolesAndPermissionsSeeder;
+use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Tests\Support\StaffTestHelpers;
@@ -15,5 +15,5 @@ abstract class TestCase extends BaseTestCase
 
     protected bool $seed = true;
 
-    protected string $seeder = RolesAndPermissionsSeeder::class;
+    protected string $seeder = DatabaseSeeder::class;
 }

@@ -56,8 +56,7 @@ return [
         /*
          * Description rendered on the home page of the API documentation (`/docs/api`).
          */
-        'description' => 'REST API for the Center_DB System. '
-            . 'API endpoints use the /api/v1 prefix.',
+        'description' => "REST API for the Center_DB System. API endpoints use the /api/v1 prefix.",
     ],
 
     'ui' => [
@@ -157,7 +156,7 @@ return [
      *
      * Where the descriptions are stored is controlled by `enum_cases_description_strategy`.
      */
-    // 'enum_cases_auto_description_strategy' => false,
+    'enum_cases_auto_description_strategy' => false,
 
     /**
      * When Scramble encounters deep objects in query parameters, it flattens the parameters so the generated

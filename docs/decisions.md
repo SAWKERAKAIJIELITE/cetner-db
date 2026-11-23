@@ -69,22 +69,23 @@ Template at the end of this file.
 
 ## 2. Identity and access
 
-### D-006 Staff are the only actor; one role each; three roles
+### D-006 Staff are the only actor; one role each; four roles
 
-- **Status:** Accepted for the structure; the role list is **assumed** (OD-1)
+- **Status:** Accepted (owner, Step 2: a supervisor exists; data entry is not split by section for now)
 - **Decision:** the people using the system are staff (`staff_users`): data entry employees enter the information
   (owner, Step 1: "there are Data Entry employees enter the information to this project"). Each staff user holds
   **one role** (recruitment D-085); there are no personal grants or denials. The roles:
 
   | Role | Slug | Default permissions |
   | ---- | ---- | ------------------- |
-  | مدخل بيانات | `data_entry` | view and manage employees, records and documents; import; the operations audit |
+  | مدخل بيانات | `data_entry` | view, add and update employees; view, add, update and delete records; documents; import; the operations audit |
+  | المشرف | `supervisor` | view and update employees and records, adding and deleting nothing; review every entry (D-023); manage the settings; reports; the operations audit |
   | المدير العام | `general_manager` | every read-only permission it is given: employees, records, documents, reports, the whole audit |
   | مدير النظام | `system_admin` | every permission, always (computed, not stored, not editable) |
 
-  The permissions of `data_entry` and `general_manager` are data that the administrator edits (D-015).
+  The permissions of every role but the administrator's are data that the administrator edits (D-015).
 - **Why:** the workbook has no roles; the recruitment system's model (offices, a viewing manager, an administrator)
-  fits with one office. A second office later is a new role, not a code change.
+  fits with one office and its supervisor. Splitting data entry by section later is a new role, not a code change.
 - **Rejected:** per-user permissions (recruitment D-085 removed them: harder to reason about, harder to audit).
 
 ### D-007 No cascading deletes; no ON UPDATE actions
@@ -134,7 +135,7 @@ Template at the end of this file.
 
 ### D-013 Staff log in from a trusted device
 
-- **Status:** Accepted (recruitment D-017, D-022; owner: "follow same approach")
+- **Status:** Accepted (recruitment D-017, D-022; owner: "follow same approach"; Step 2: the desktop app only, OD-3)
 - **Decision:** the same protocol as the recruitment system, with its own payload prefix `hr-staff-login-v1`, so a
   signature for one system is never valid on the other:
   1. The desktop app generates an ECDSA P-256 key pair once; the public key (SPKI PEM), a label, the MAC address and
@@ -195,12 +196,16 @@ Template at the end of this file.
 | Permission | Read-only | For |
 | ---------- | :-------: | --- |
 | `employees.view` | ✓ | the employees' files, the per-person forms (Step 3, 6) |
-| `employees.manage` | | adding employees, updating their data, review cycles (Step 3) |
+| `employees.create` | | adding new employees (Step 3) |
+| `employees.update` | | updating the employees' data, closing review cycles (Step 3) |
+| `entries.review` | | the supervisor's review of every entry and change: approve or send back (Steps 3 and 4, D-023) |
 | `records.view` | ✓ | movements, attendance, conduct, debts (Step 4) |
-| `records.manage` | | entering and correcting those records (Step 4) |
+| `records.create` | | entering those records (Step 4) |
+| `records.update` | | correcting them (Step 4) |
+| `records.delete` | | removing a record entered by mistake (Step 4) |
 | `documents.view` | ✓ | the 13 attachments (Step 5) |
 | `documents.manage` | | uploading and archiving them (Step 5) |
-| `settings.manage` | | the lists, the organisational structure, holidays, work settings (Step 2) |
+| `settings.manage` | | the lists, the organisational structure, holidays, work settings (Step 2; administrator and supervisor, OD-2) |
 | `reports.view` | ✓ | the dashboards and exports (Step 6) |
 | `imports.manage` | | importing existing workbooks (Step 7) |
 | `audit.view` | ✓ | the whole audit log |
@@ -238,19 +243,144 @@ Template at the end of this file.
   public endpoints carry `@unauthenticated`. `php artisan scramble:analyze` must report no warnings. The pages
   (`/docs/api`) are open in `local` only; in production nginx serves `/api/…` alone.
 
+### D-023 The supervisor reviews everything; reads and updates, adds and deletes nothing
+
+- **Status:** Accepted (owner, 23 Nov: OD-8, OD-9)
+- **Decision:**
+  - A `supervisor` role (المشرف) with `entries.review`: the supervisor can review **anything**: every new employee,
+    every change to a file, every record (movements, attendance, conduct, debts) and every deletion.
+  - Until a change is approved **the file shows the approved (old) value, with the pending change beside it**. An
+    approved change replaces the value; a refused one goes back to its author with a reason. Nobody reviews their
+    own entry. Built with the data it reviews (Steps 3 and 4).
+  - The supervisor **reads and updates; does not add or delete**: `employees.update` and `records.update` are the
+    role's, `employees.create`, `records.create`, `records.delete`, `documents.manage` and `imports.manage` are not.
+    For that the two "manage" permissions were split (`employees.create` / `.update`; `records.create` / `.update` /
+    `.delete`); the migration `split_manage_permissions` carries an already seeded database over.
+  - The supervisor keeps `settings.manage` (owner's earlier answer, OD-2), which does include adding list items and
+    removing a holiday: the settings are configuration, not the employees' data.
+- **Open:** whether the supervisor's own update takes effect at once or waits for another reviewer (OD-11).
+
+---
+
+## 4. Settings (Step 2)
+
+### D-024 The lists of «الإعدادات» are managed data, their kinds are code
+
+- **Status:** Accepted
+- **Decision:** `lookup_lists` holds the 27 kinds of the workbook's drop-down lists (gender, blood type, marital
+  status, education level, … debt type, work nature), seeded from `ListCatalogue`; nobody adds a kind from the
+  application, because each one is used by fields of the code. `lookup_items` holds their items: added, renamed,
+  reordered, archived and restored by `settings.manage` holders (the administrator and the supervisor, OD-2); never
+  deleted, so a file that uses an item keeps it (D-007). Every signed-in user reads the lists (the forms need them).
+  Integer keys (D-003's exception).
+  - The same word typed another way is a duplicate: `search_key` (ArabicText, D-029 of the recruitment system) is
+    unique in a list; «سكن مع الأهل» is «سكن مع الاهل». An archived duplicate is restored, not added again.
+  - Not lists: «نعم / لا» (those fields become booleans) and «دورة التحديث» (the system's cycles, Step 3).
+  - The seeder gives a list the workbook's items only when the list is first created; afterwards the items are data.
+- **Rejected:** enums in code (a new item would need a release); one free-text column per field (the workbook's
+  dashboards count by exact text; typing variants would split the counts).
+
+### D-025 System items carry a code
+
+- **Status:** Accepted
+- **Decision:** an item the code's logic refers to has a `code` (unique in its list): gender `male` / `female`,
+  employee status `active` / `inactive`, job status `discharged` (مسرح), health `healthy` / `injured` /
+  `chronic_illness`, marital status `single`, housing `rented`, current study `none`, movement `reward` / `deduction`.
+  It can be renamed; it cannot be archived (422, and a CHECK). The seeder ensures every code on every run: an existing
+  item with the same word takes it, otherwise the item is added. Later steps add codes as their rules need them.
+- **Why:** the workbook's checks compare text («مسرح» needs a discharge date, «ايجار» a rent, «مصاب» an injury type);
+  a renamed item would silently break them. Codes keep the rules working whatever the label says.
+
+### D-026 The organisational structure is a tree of at most six levels
+
+- **Status:** Accepted
+- **Decision:** `org_units` (id, parent, level 1 to 6, name, search key, archived). The workbook repeats six names on
+  every row and on every employee; here each unit is one row and an employee will point at the deepest unit
+  (Step 3). Siblings have distinct names (top-level units among themselves); cousins may share one («فرع المالية»
+  under two directorates). A unit is archived once its children are (Step 3 adds: and it has no active employee);
+  restored under an active parent; not moved: a reorganisation adds the new unit, moves the people, archives the old
+  one, so history keeps the old path. A trigger guards the levels, an active unit's active parent, archiving with active
+  children and moving. `GET /settings/org-units` returns every unit with its path (one recursive query), a parent
+  before its children.
+- **Rejected:** six text columns on the employee (the workbook's way: a typo makes a new unit; renaming a unit means
+  editing every employee).
+
+### D-027 Holidays are date ranges
+
+- **Status:** Accepted
+- **Decision:** `holidays` (name, `starts_on`, `ends_on` both included, `days` computed by the database, notes),
+  at most a year long. Added, corrected and removed by `settings.manage` holders, each change audited with its dates;
+  listed by year. Overlapping holidays are allowed: the attendance (Step 4) will count each date once.
+
+### D-028 The branch settings are one row
+
+- **Status:** Accepted
+- **Decision:** `work_settings`, one row (id 1) created by the migration with the workbook's values: branch name,
+  daily hours, start and end of the working day, lateness minutes, working days per week, currency, annual leave
+  balance, and the four review windows (35, 100, 190, 370 days). CHECKs: the day ends after it starts, the windows grow
+  (monthly ≤ quarterly ≤ semi-annual ≤ annual); the request says so in Arabic first. `PUT /settings/work` changes the
+  fields sent; the audit keeps each change's before and after; the same value again records nothing.
+
+### D-029 The workbook's sample structure and holidays are local only
+
+- **Status:** Accepted
+- **Decision:** the lists are the vocabulary of every installation (seeded everywhere). The workbook's eight sample
+  units and its 2026 holidays look like examples, so `DevSettingsSeeder` loads them in `local` only; a real
+  installation enters its own structure and holidays (or imports them, Step 7).
+
+### D-030 Sensitive fields are stored as given, for now
+
+- **Status:** Accepted (owner, Step 2, OD-7); encryption deferred
+- **Decision:** the national number, the weapon numbers, the security form, the guardian's national number and the
+  debts are stored as given (Step 3), protected by the server's disk encryption, access control and the audit.
+  Encrypting columns is planned later; the employee schema keeps them in their own columns so that it can be done
+  column by column (an encrypted column cannot be searched or made unique as plain text: the national number will
+  then need a separate hash for uniqueness).
+
+### D-031 Performance: one PostgreSQL server, indexes and history tables; no distributed database, little cache
+
+- **Status:** Accepted as the plan (owner's questions, 23 Nov); measured in Step 3
+- **Context:** the system is the central file, updated every month, quarter, half-year and year, and keeps what
+  changed. About 4,000 people; at worst a few million history rows a year.
+- **Decision:**
+  - **One PostgreSQL server** (plus a standby replica and backups for safety, Step 7). This volume is small for
+    PostgreSQL; a distributed database would cost the foreign keys, unique constraints, triggers and transactions the
+    design relies on, and an operations burden, for a problem the system does not have.
+  - **Current values on the employee's row, history in separate append-only tables**: everyday reads stay small
+    whatever the history grows to.
+  - **Indexes for the real queries**: الرقم الذاتي, the national number, the name's search key (trigram), unit, status,
+    contract end; history by employee and date. Lists are paginated and return a few columns, never the 159.
+  - **Dashboards count in SQL**; a materialized view refreshed after changes or nightly if a count gets slow.
+  - **Cache only what is read on every screen and rarely changes**: the lists and the organisational structure
+    (invalidated when they change), and the dashboard's numbers for a short time. Never the employees' files: a stale
+    file or a hidden pending change costs more than the few milliseconds saved. The database cache store is enough
+    (no Redis).
+  - **Partitioning** the history and audit tables by year is kept for later: it pays from hundreds of millions of rows.
+  - **Measure before tuning**: Step 3 ships a seeder that generates 4,000 employees with years of history, and the
+    slow queries are read with `EXPLAIN ANALYZE`.
+- **History as "version control"** (owner's question): each change of a field is a row (old value, new value, who
+  entered it, who approved it, when, in which cycle), and each review of a cycle is a row per employee and period, also
+  when nothing changed. The workbook's four «آخر مراجعة» dates become those rows, so "what was true in March" and "who
+  confirmed the third quarter" are queries. Pending changes are stored beside the approved value until reviewed (D-023).
+
 ---
 
 ## Open questions
 
 | ID | Question | Status |
 | -- | -------- | ------ |
-| OD-1 | Roles: is one data entry role right, or should a supervisor review entries before they count (four eyes), or should data entry be split by section (personnel, attendance, finance)? | **Assumed:** one `data_entry` role, the general manager viewing, the administrator (D-006). New roles are data. |
-| OD-2 | Who edits the lists, the organisational structure and the holidays (the الإعدادات sheet)? | **Assumed:** the system administrator only (`settings.manage` is not data entry's by default). One API call gives it to data entry. |
-| OD-3 | Which client: the same Electron desktop app with device-bound login as the recruitment system, or a web page? | **Assumed:** the desktop app (D-013). A web fallback is deferred, as in recruitment (OD-3 there). |
+| OD-1 | Roles: a supervisor who reviews entries? data entry split by section? | **Answered** (Step 2): a supervisor exists (D-023); data entry is not split for now (D-006). |
+| OD-2 | Who edits the lists, the organisational structure and the holidays? | **Answered** (Step 2): the administrator and the supervisor (`settings.manage`, D-024). |
+| OD-3 | Which client? | **Answered** (Step 2): the desktop app only (D-013). |
 | OD-4 | Leaked-password check (`uncompromised()`) needs the internet. | **Off** while the server has none. |
-| OD-5 | Do data entry employees see the dashboards? | **Assumed:** no; `reports.view` is the general manager's (and the administrator's). The per-person forms come with `employees.view`. |
-| OD-6 | Connection with the recruitment system (and whether "Mawarid", the integration planned there, is this system). | **Deferred** (owner, Step 1: "in the future we will apply the changes"). The schema keeps room for it: UUID keys, الرقم الذاتي not the key, national number unique. |
-| OD-7 | Sensitive fields (national number, weapon numbers, security form, debts): stored as given, or encrypted? | **To decide in Step 3.** The recruitment system stores the national number as given (its D-032). |
+| OD-5 | Do data entry employees see the dashboards? | **Answered** (Step 2): no; `reports.view` is the supervisor's, the general manager's and the administrator's. |
+| OD-6 | Connection with the recruitment system (and whether "Mawarid" is this system). | **Deferred** (owner, Step 1). |
+| OD-7 | Sensitive fields: stored as given, or encrypted? | **Answered** (Step 2): as given now, encrypted later (D-030). |
+| OD-8 | What does the supervisor review, and what does the file show until approval? | **Answered** (23 Nov): anything; the old value with the pending change beside it (D-023). |
+| OD-9 | Does the supervisor also enter data? | **Answered** (23 Nov): reads and updates; does not add or delete (D-023). |
+| OD-10 | «المسمى الوظيفي»: a list or free text? | **Answered** (23 Nov): a drop-down list (`job_title`, filled by the settings managers). |
+| OD-11 | The supervisor's own update: does it take effect at once (audited), or wait for another supervisor or the administrator? | **Open: needed for Step 3.** Assumed until answered: at once, audited, since the supervisor is the reviewer. |
+| OD-12 | Scale and performance (owner's questions, 23 Nov): cache, distributed database, history. | **Answered in D-031.** |
 
 ---
 

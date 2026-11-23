@@ -20,6 +20,19 @@ final class AuditEvents
         'access.user_deactivated' => 'إيقاف مستخدم',
         'access.user_activated' => 'إعادة تفعيل مستخدم',
         'access.password_reset' => 'تعيين كلمة مرور جديدة لمستخدم',
+        'settings.list_item_added' => 'إضافة عنصر إلى قائمة',
+        'settings.list_item_updated' => 'تعديل عنصر في قائمة',
+        'settings.list_item_archived' => 'أرشفة عنصر من قائمة',
+        'settings.list_item_restored' => 'استعادة عنصر إلى قائمة',
+        'settings.list_reordered' => 'إعادة ترتيب قائمة',
+        'settings.org_unit_added' => 'إضافة جهة عمل',
+        'settings.org_unit_renamed' => 'تعديل اسم جهة عمل',
+        'settings.org_unit_archived' => 'أرشفة جهة عمل',
+        'settings.org_unit_restored' => 'استعادة جهة عمل',
+        'settings.holiday_added' => 'إضافة عطلة رسمية',
+        'settings.holiday_updated' => 'تعديل عطلة رسمية',
+        'settings.holiday_deleted' => 'حذف عطلة رسمية',
+        'settings.work_updated' => 'تعديل إعدادات الفرع',
     ];
 
     public static function label(string $event): string

@@ -9,7 +9,7 @@ class SetUserRoleRequest extends FormRequest
     public function rules(): array
     {
         return [
-            /** The role's slug: data_entry, general_manager or system_admin. */
+            /** The role's slug: data_entry, supervisor, general_manager or system_admin. */
             'role' => ['required', 'string', 'exists:roles,slug'],
         ];
     }

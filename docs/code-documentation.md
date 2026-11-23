@@ -1,6 +1,7 @@
 # HR Backend: Technical Documentation (نظام إدارة القوى البشرية)
 
-Status: **Step 1** (foundation, staff identity and roles, device-bound login, access and user management, audit log).
+Status: **Step 2** (Step 1: foundation, staff identity and roles, device-bound login, access and user management,
+audit log; Step 2: settings: the managed lists, the organisational structure, holidays, branch settings).
 Updated at the end of every step.
 
 Audience: developers joining or reviewing the backend.
@@ -16,9 +17,9 @@ one file per person (159 fields updated on monthly, quarterly, semi-annual and a
 movements, monthly attendance, conduct and debts, the per-person forms and the two dashboards. A Laravel REST API on
 PostgreSQL, built the same way as the recruitment system (D-001), as a separate application with its own database.
 
-**Data entry employees** enter the information; the **general manager** views it; the **system administrator** runs
-the system (D-006). They use a desktop app (React + Electron, assumed, OD-3) and log in from approved devices only
-(D-013).
+**Data entry employees** enter the information; the **supervisor** reviews their entries and manages the settings;
+the **general manager** views everything; the **system administrator** runs the system (D-006, D-023). They use the
+desktop app only (React + Electron, OD-3) and log in from approved devices (D-013).
 
 ## 2. Module status and plan
 
@@ -27,8 +28,8 @@ the system (D-006). They use a desktop app (React + Electron, assumed, OD-3) and
 | 1 | Foundation | Done | Project, PostgreSQL, module loader, UTC, Arabic JSON and errors, tests on PostgreSQL |
 | 1 | Identity | Done | Staff users, one role each (data entry, general manager, administrator), device-bound login, access and user management, first administrator from the shell |
 | 1 | Audit | Done | `audit_events`, append-only, written with each action; read API |
-| 2 | Settings | Planned | «الإعدادات»: the 29 lists, the six-level organisational structure, holidays, work settings (hours, leave balance, the four review periods) |
-| 3 | Employees | Planned | «قاعدة بيانات الموظفين» and «دليل الحقول»: the 159 fields with the sheet's checks, field definitions per update cycle, completeness and missing fields, review periods per cycle, change history |
+| 2 | Settings | Done | «الإعدادات»: 27 managed lists (yes/no and the update cycle are not lists), the six-level organisational structure, holidays, the branch settings with the four review windows |
+| 3 | Employees | Planned | «قاعدة بيانات الموظفين» and «دليل الحقول»: the 159 fields with the sheet's checks, field definitions per update cycle, completeness and missing fields, review periods per cycle, change history, the supervisor's review (D-023, OD-8) |
 | 4 | Records | Planned | «سجل الحركات», «سجل الدوام الشهري», «سجل السلوك الوظيفي», «سجل الديون» |
 | 5 | Documents | Planned | The 13 attachments (photo, ID, family statement, certificate, …) as uploaded files instead of links |
 | 6 | Views and reports | Planned | «عرض الفرد» and the three forms as PDF, «داش بورد الموظفين», «داش بورد الحركات», Excel exports |
@@ -129,6 +130,13 @@ app/
     │   ├── Models/         StaffUser, Role, Permission, StaffDevice, DeviceLoginChallenge, AccessToken
     │   ├── Support/        Username, StaffPassword, DeviceCrypto, AccessInvariants, LoginResult
     │   └── routes.php
+    ├── Settings/
+    │   ├── Actions/        ManageListItems, ManageOrgUnits, ManageHolidays, UpdateWorkSettings
+    │   ├── Database/       Migrations (3), Seeders (SettingsSeeder, DevSettingsSeeder)
+    │   ├── Http/           Controllers (LookupList, OrgUnit, Holiday, WorkSettings), Requests, Resources
+    │   ├── Models/         LookupList, LookupItem, OrgUnit, Holiday, WorkSettings
+    │   ├── Support/        ListCatalogue (the 27 lists, the workbook's items, system codes), OrgUnitTree
+    │   └── routes.php
     └── Audit/
         ├── Database/Migrations (1)
         ├── Http/            AuditEventController, AuditEventIndexRequest, AuditEventResource
@@ -212,23 +220,27 @@ approved device per user (a revoked device frees the slot and stays as history).
 `✓` = given by the role by default. The system administrator holds every permission, always (computed, not stored,
 not editable). The general manager's role takes read-only permissions only.
 
-| Permission | Read-only | Data entry | General manager | System admin |
-| ---------- | :-------: | :--------: | :-------------: | :----------: |
-| `employees.view` | ✓ | ✓ | ✓ | ✓ |
-| `employees.manage` | | ✓ | — | ✓ |
-| `records.view` | ✓ | ✓ | ✓ | ✓ |
-| `records.manage` | | ✓ | — | ✓ |
-| `documents.view` | ✓ | ✓ | ✓ | ✓ |
-| `documents.manage` | | ✓ | — | ✓ |
-| `imports.manage` | | ✓ | — | ✓ |
-| `settings.manage` | | — | — | ✓ |
-| `reports.view` | ✓ | — | ✓ | ✓ |
-| `audit.view` | ✓ | — | ✓ | ✓ |
-| `audit.view_related` | ✓ | ✓ | — | ✓ |
-| `users.manage` | | — | — | ✓ |
-| `devices.approve` | | — | — | ✓ |
+| Permission | Read-only | Data entry | Supervisor | General manager | System admin |
+| ---------- | :-------: | :--------: | :--------: | :-------------: | :----------: |
+| `employees.view` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `employees.create` | | ✓ | — | — | ✓ |
+| `employees.update` | | ✓ | ✓ | — | ✓ |
+| `entries.review` | | — | ✓ | — | ✓ |
+| `records.view` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `records.create` | | ✓ | — | — | ✓ |
+| `records.update` | | ✓ | ✓ | — | ✓ |
+| `records.delete` | | ✓ | — | — | ✓ |
+| `documents.view` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `documents.manage` | | ✓ | — | — | ✓ |
+| `imports.manage` | | ✓ | — | — | ✓ |
+| `settings.manage` | | — | ✓ | — | ✓ |
+| `reports.view` | ✓ | — | ✓ | ✓ | ✓ |
+| `audit.view` | ✓ | — | — | ✓ | ✓ |
+| `audit.view_related` | ✓ | ✓ | ✓ | — | ✓ |
+| `users.manage` | | — | — | — | ✓ |
+| `devices.approve` | | — | — | — | ✓ |
 
-Role slugs: `data_entry`, `general_manager`, `system_admin` (`App\Modules\Identity\Enums\StaffRole`). The seeder
+Role slugs: `data_entry`, `supervisor`, `general_manager`, `system_admin` (`App\Modules\Identity\Enums\StaffRole`). The seeder
 (`RolesAndPermissionsSeeder::PERMISSIONS`, `ROLES`) upserts the catalogue and gives a role its defaults only when the
 role is first created; afterwards the administrator owns the data (D-015).
 
@@ -352,9 +364,11 @@ Every failure writes `staff_login_failed` to the log with the real reason (never
 | Seeder | Runs | Purpose |
 | ------ | ---- | ------- |
 | `RolesAndPermissionsSeeder` | every environment | The catalogue (upsert) and the roles' defaults when first created |
-| `DevUsersSeeder` | `APP_ENV=local` only | `admin` (system administrator), `manager` (general manager), `entry` and `entry.two` (data entry); password `Password1!` |
+| `SettingsSeeder` | every environment | The 27 lists; the workbook's items when a list is first created; system codes ensured every run (section 9) |
+| `DevUsersSeeder` | `APP_ENV=local` only | `admin` (system administrator), `supervisor`, `manager` (general manager), `entry` and `entry.two` (data entry); password `Password1!` |
+| `DevSettingsSeeder` | `APP_ENV=local` only | The workbook's sample structure (21 units) and its 2026 holidays (D-029) |
 
-Production: `php artisan migrate --force`, then `php artisan db:seed --force` (the catalogue only; re-run safe). A
+Production: `php artisan migrate --force`, then `php artisan db:seed --force` (the catalogues only; re-run safe). A
 new installation has no user:
 
 ```bash
@@ -399,10 +413,133 @@ Events of Step 1:
 `audit.view` reads everything; `audit.view_related` the operations only (the security events are hidden). Failed
 logins are in the application log only.
 
-## 9. Testing
+## 9. Settings module (Step 2)
 
-`php artisan test` (PostgreSQL database `hr_test`, `RefreshDatabase`, the catalogue seeded for every test):
-**63 tests**. Fixed device keys in `tests/Support/TestDeviceKeys.php` (D-020); helpers in
+«الإعدادات» of the workbook: what every form and later step reads. Every signed-in user reads the settings;
+`settings.manage` holders (the administrator and the supervisor, OD-2) change them. Every change is audited
+(`settings.*`, category operations).
+
+### 9.1 Managed lists (D-024, D-025)
+
+**`lookup_lists`**: `id`, `key` unique (CHECK `^[a-z_]+$`), `label_ar`, `description_ar` (the fields that use it).
+Created by `SettingsSeeder` from `ListCatalogue` only.
+
+**`lookup_items`**: `id`, `lookup_list_id` (RESTRICT), `label` (CHECK not blank), `search_key` (unique in the
+list), `code` (CHECK `^[a-z_]+$`, unique in the list when set), `sort_order` (CHECK ≥ 0), `created_by`,
+`archived_at`, `archived_by` (CHECK: only when archived), timestamps. CHECK: a coded item is never archived.
+
+The 27 lists, with the fields that use them:
+
+| Key | List | Used by | System codes |
+| --- | ---- | ------- | ------------ |
+| `gender` | الجنس | الجنس | `male`, `female` |
+| `blood_type` | فصيلة الدم | فصيلة الدم | |
+| `marital_status` | الحالة الاجتماعية | الحالة الاجتماعية | `single` |
+| `education_level` | التحصيل العلمي | الدراسة الأولى، الدراسة الثانية، التحصيل العلمي | |
+| `current_study` | الدراسة الحالية | الدراسة الحالية | `none` (لا) |
+| `study_year` | السنة الدراسية | السنة الدراسية الحالية | |
+| `position_level` | المستوى التنظيمي (المنصب) | المستوى التنظيمي (المنصب) | |
+| `job_title` | المسمى الوظيفي | المسمى الوظيفي (التخصص); empty in the workbook (OD-10) | |
+| `employee_status` | حالة الموظف | حالة الموظف | `active`, `inactive` |
+| `job_status` | الحالة الوظيفية | الحالة الوظيفية | `discharged` (مسرح) |
+| `org_stage` | المرحلة التنظيمية | المرحلة التنظيمية | |
+| `org_stage_level` | مستوى المرحلة التنظيمية | مستوى المرحلة التنظيمية | |
+| `contract_type` | نوع العقد | نوع العقد | |
+| `work_schedule` | نوع الدوام | نوع الدوام | |
+| `health_status` | الحالة الصحية | الحالة الصحية | `healthy`, `injured`, `chronic_illness` |
+| `ability_level` | مستوى القدرة (خطابة / تدريس) | القدرة على الخطابة، القدرة على التدريس | |
+| `housing_type` | نوع السكن | نوع السكن الحالي | `rented` (ايجار) |
+| `vehicle_ownership` | ملكية المركبة | ملكية السيارة، ملكية الدراجة | |
+| `guardian_relation` | صلة القرابة بالوصي | صلة القرابة بالوصي | |
+| `external_entity_type` | نوع الجهة الأخرى | نوع الجهة الأخرى | |
+| `external_link_type` | نوع الارتباط | نوع الارتباط | |
+| `external_schedule` | نظام الدوام بالجهة الأخرى | نظام الدوام بالجهة الأخرى | |
+| `movement_type` | نوع الحركة | سجل الحركات | `reward`, `deduction` |
+| `conduct_type` | نوع السجل السلوكي | سجل السلوك الوظيفي | |
+| `conduct_status` | حالة المعالجة | سجل السلوك الوظيفي | |
+| `debt_type` | نوع الدين | سجل الديون | |
+| `work_nature` | طبيعة العمل | طبيعة العمل | |
+
+Not lists: «نعم / لا» (booleans) and «دورة التحديث» (the system's cycles, Step 3).
+
+Rules (`ManageListItems`): an item is added at the end unless `sort_order` is given; the same word typed another
+way is a duplicate (422, naming the existing item; an archived one is to be restored); renaming checks the same;
+a system item is renamed but not archived (422); reordering takes every active item's id once (archived items
+follow); each list's changes are serialised (row lock on the list).
+
+### 9.2 Organisational structure (D-026)
+
+**`org_units`**: `id`, `parent_id` (RESTRICT), `level` (CHECK 1 to 6; level 1 has no parent), `name` (CHECK not
+blank), `search_key`, `created_by`, `archived_at`, `archived_by`, timestamps. Unique index
+`(COALESCE(parent_id, 0), search_key)`: siblings have distinct names. Trigger `org_units_tree`: a child is its
+parent's level plus one; an active unit has an active parent; a unit with active children is not archived; a unit
+is not moved.
+
+`OrgUnitTree::all()` returns every unit with `path` (names from the top) and `path_ids` in one recursive query,
+ordered by path (a parent before its children).
+
+Rules (`ManageOrgUnits`): added under an active parent of level < 6, or at the top; renamed (same duplicate check);
+archived once its children are; restored under an active parent; never moved (D-026).
+
+### 9.3 Holidays (D-027) and branch settings (D-028)
+
+**`holidays`**: `id`, `name`, `starts_on`, `ends_on` (CHECK ≥ start, < 366 days apart), `days` (generated:
+`ends_on - starts_on + 1`), `notes`, `created_by`, `updated_by`, timestamps. Overlaps allowed.
+
+**`work_settings`**: one row (CHECK `id = 1`), created by the migration with the workbook's values:
+
+| Column | Workbook | Default | Rule |
+| ------ | -------- | ------- | ---- |
+| `branch_name` | اسم الفرع | القوى البشرية | not blank |
+| `daily_hours` | ساعات العمل | 8 | > 0, ≤ 24, two decimals |
+| `starts_at`, `ends_at` | بداية الدوام، نهاية الدوام | 08:00, 16:00 | end after start |
+| `late_after_minutes` | التأخير (دقيقة) | 10 | 0 to 240 |
+| `work_days_per_week` | أيام العمل | 5 | 1 to 7 |
+| `currency` | العملة | ل.س | not blank |
+| `annual_leave_days` | رصيد الإجازات | 21 | 0 to 365 |
+| `review_window_monthly` … `_annual` | مهلة المراجعة | 35, 100, 190, 370 | > 0, growing, ≤ 1000 |
+
+### 9.4 API reference
+
+Base path `/api/v1/staff/settings`. Reading: any signed-in user. Changing: `settings.manage`.
+
+| Method | Path | Purpose |
+| ------ | ---- | ------- |
+| GET | `/lists` | Every list with its active items in order; `include_archived=1` adds the archived ones |
+| GET | `/lists/{key}` | One list (same parameter) |
+| POST | `/lists/{key}/items` | `label`, `sort_order` (optional). 201 |
+| PUT | `/lists/{key}/items/{id}` | `label` and/or `sort_order` |
+| POST | `/lists/{key}/items/{id}/archive` | Not offered any more (system items: 422) |
+| POST | `/lists/{key}/items/{id}/restore` | Offered again |
+| PUT | `/lists/{key}/order` | `item_ids`: every active item, in order |
+| GET | `/org-units` | Every unit: `id`, `parent_id`, `level`, `name`, `path`, `path_ids`, `path_label`, `archived`; `include_archived=1` |
+| POST | `/org-units` | `name`, `parent_id` (absent: a top-level unit). 201 |
+| PUT | `/org-units/{id}` | `name` |
+| POST | `/org-units/{id}/archive` | Once its children are archived |
+| POST | `/org-units/{id}/restore` | Under an active parent |
+| GET | `/holidays` | By start date; `year` for those touching a year |
+| POST | `/holidays` | `name`, `starts_on`, `ends_on` (Y-m-d), `notes`. 201 |
+| PUT | `/holidays/{id}` | The fields sent, checked with the stored ones |
+| DELETE | `/holidays/{id}` | 204 |
+| GET | `/work` | The branch settings, `review_windows` grouped |
+| PUT | `/work` | The fields sent (`review_window_monthly` …); the rules between fields checked with the stored values |
+
+Item, unit and holiday ids are integers; an item is reached through its own list only (404 otherwise).
+
+### 9.5 Audit events
+
+| Event | Label |
+| ----- | ----- |
+| `settings.list_item_added`, `_updated`, `_archived`, `_restored` | إضافة / تعديل / أرشفة / استعادة عنصر في قائمة |
+| `settings.list_reordered` | إعادة ترتيب قائمة |
+| `settings.org_unit_added`, `_renamed`, `_archived`, `_restored` | إضافة / تعديل اسم / أرشفة / استعادة جهة عمل |
+| `settings.holiday_added`, `_updated`, `_deleted` | إضافة / تعديل / حذف عطلة رسمية |
+| `settings.work_updated` | تعديل إعدادات الفرع (each changed field with `from` and `to`) |
+
+## 10. Testing
+
+`php artisan test` (PostgreSQL database `hr_test`, `RefreshDatabase`, the catalogues seeded through
+`DatabaseSeeder` for every test): **84 tests**. Fixed device keys in `tests/Support/TestDeviceKeys.php` (D-020); helpers in
 `tests/Support/StaffTestHelpers.php` (`staffUser($role)`, `admin()`, `pendingDevice()`, `approvedDevice()`,
 `loginThrough()` (challenge and signed login through the API), `actingAsStaff()`).
 
@@ -415,6 +552,9 @@ logins are in the application log only.
 | `Feature/Identity/CreateAdminCommandTest` | `staff:create-admin` with the API's rules, audited `via: console`; weak or mismatched password refused; confirmation when an administrator exists; refused before the roles are seeded |
 | `Feature/Audit/AuditEventApiTest` | Row with actor, category, related ids, address; nothing after a rollback; append-only (update, delete, truncate); category follows the event; newest first with filters (kind, event, related id, actor, Damascus days, bad input); operations only for `audit.view_related`; permission needed; every recorded event has a label and every label is recorded |
 | `Feature/RequestConventionsTest` | Arabic 401, 403, 404 and 429 (with `Retry-After`), Arabic validation messages, all without `\u` escapes; the database session in UTC |
+| `Feature/Settings/LookupListTest` | The 27 lists seeded in order with their system codes; everybody reads, the supervisor and the administrator change; added at the end and audited; duplicates by search key (and per list); rename and move; archive, restore (archived duplicate restored, not added); system items renamed, never archived (API and CHECK); reorder all active items; the seeder keeps the managers' changes and restores a missing code |
+| `Feature/Settings/OrgUnitTest` | Six levels with paths and the seventh refused; sibling names unique, cousins free; archive after the children, restore under an active parent; rename; the database trigger (level, root, archive with children, move); data entry reads only |
+| `Feature/Settings/HolidayAndWorkSettingsTest` | Days with both ends, by year; correct and delete (204); ends before start and longer than a year refused; the workbook's branch settings from the start; changes with their rules, each change audited, the same value recording nothing; only settings managers change |
 | `Unit/ArabicTextTest`, `Unit/BusinessDayTest` | Digits, search key; the next Damascus midnight, a day's UTC bounds |
 
 API documentation check: `php artisan scramble:analyze` must report no warnings. Code style: `./vendor/bin/pint`.
@@ -422,10 +562,13 @@ API documentation check: `php artisan scramble:analyze` must report no warnings.
 The whole login was also run over HTTP with `tools/device-client.mjs` against `php artisan serve`: registration,
 console approval, signed login, a call with the token, the audit log.
 
-## 10. Known limitations and pending work
+## 11. Known limitations and pending work
 
-- Everything of the workbook itself comes in Steps 2 to 7 (section 2).
-- The roles and their defaults are assumed (OD-1, OD-2, OD-5); the client is assumed to be the desktop app (OD-3).
+- The employees, their records, documents, views and import come in Steps 3 to 7 (section 2).
+- The supervisor's review is defined as a role and permissions (D-023: reviews anything; reads and updates, adds and
+  deletes nothing); the review itself is built in Steps 3 and 4. Open: OD-11.
+- Performance plan: D-031 (one PostgreSQL server, indexes, history tables, little cache); measured in Step 3.
+- Archiving an organisational unit does not check its employees yet (Step 3).
 - Passwords are not checked against known leaks (OD-4).
 - The device key is protected by the Windows user, not by hardware (D-013).
 - Failed logins are in the application log only; the audit table's retention belongs to the deployment.
@@ -433,8 +576,10 @@ console approval, signed login, a call with the token, the audit log.
 - Migrations may still change in place until the first production installation; from then on they are append-only
   (recruitment D-101).
 
-## 11. Changelog
+## 12. Changelog
 
 | Step | Summary |
 | ---- | ------- |
 | 1 | Foundation: Laravel 12 modular monolith on PostgreSQL 16, UTC connection, Damascus business days, Arabic unescaped JSON as a global middleware, Arabic 401/403/404/429 and validation messages (D-001 to D-005, D-011, D-012, D-022). Identity: staff users with one role (data entry, general manager, system administrator) and the whole system's permission catalogue (D-006, D-019); device-bound login with the payload prefix `hr-staff-login-v1`, tokens until 00:00 in Damascus (D-009, D-013, D-014); access and user management with the last-manager and no-escalation rules (D-015); `staff:create-admin`, `staff:approve-device` (D-018). Audit: append-only `audit_events` with related ids and a read API (D-017). Reference device client. 63 tests |
+| 2 | Owner's answers (OD-1, 2, 3, 5, 7): the `supervisor` role with `entries.review` and `settings.manage` (D-023), the desktop app only, sensitive fields stored as given (D-030). Settings: 27 managed lists with search-key duplicates, system codes and archive / restore / reorder (D-024, D-025); the organisational structure as a six-level tree with paths and database guards (D-026); holidays as date ranges (D-027); the branch settings as one row with the four review windows (D-028); the workbook's sample structure and holidays in local only (D-029). 84 tests |
+| 2.1 | Owner's answers of 23 Nov: the supervisor reviews anything, the file shows the old value with the pending change beside it, the supervisor reads and updates without adding or deleting (D-023): `employees.manage` split into `employees.create` / `.update`, `records.manage` into `records.create` / `.update` / `.delete`, with a migration that carries a seeded database over. Job title is a list (OD-10). Performance and history plan (D-031). 84 tests |

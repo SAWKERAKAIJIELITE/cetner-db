@@ -14,10 +14,12 @@ class AccessManagementTest extends TestCase
     public function test_each_role_holds_its_defaults_and_the_administrator_holds_everything(): void
     {
         $entry = $this->staffUser(StaffRole::DataEntry);
+        $supervisor = $this->staffUser(StaffRole::Supervisor);
         $manager = $this->staffUser(StaffRole::GeneralManager);
         $admin = $this->admin();
 
         $this->assertEqualsCanonicalizing(RolesAndPermissionsSeeder::ROLES['data_entry'], $entry->permissionSlugs());
+        $this->assertEqualsCanonicalizing(RolesAndPermissionsSeeder::ROLES['supervisor'], $supervisor->permissionSlugs());
         $this->assertEqualsCanonicalizing(RolesAndPermissionsSeeder::ROLES['general_manager'], $manager->permissionSlugs());
         $this->assertEqualsCanonicalizing(array_keys(RolesAndPermissionsSeeder::PERMISSIONS), $admin->permissionSlugs());
         $this->assertSame(0, Role::query()->where('slug', 'system_admin')->first()->permissions()->count());
@@ -26,6 +28,20 @@ class AccessManagementTest extends TestCase
         $this->assertEmpty(array_diff($manager->permissionSlugs(), $readOnly), 'the general manager views only');
         $this->assertNotContains('users.manage', $entry->permissionSlugs());
         $this->assertNotContains('settings.manage', $entry->permissionSlugs());
+        $this->assertNotContains('reports.view', $entry->permissionSlugs());
+        // OD-2: the settings are the administrator's and the supervisor's; OD-1: the supervisor reviews, data entry does not.
+        $this->assertContains('settings.manage', $supervisor->permissionSlugs());
+        $this->assertContains('entries.review', $supervisor->permissionSlugs());
+        $this->assertNotContains('entries.review', $entry->permissionSlugs());
+        // The supervisor reads, updates and reviews; adds and deletes nothing (D-023).
+        $this->assertContains('employees.update', $supervisor->permissionSlugs());
+        $this->assertContains('records.update', $supervisor->permissionSlugs());
+        foreach (['employees.create', 'records.create', 'records.delete', 'documents.manage', 'imports.manage'] as $permission) {
+            $this->assertNotContains($permission, $supervisor->permissionSlugs());
+        }
+        $this->assertContains('employees.create', $entry->permissionSlugs());
+        $this->assertContains('records.delete', $entry->permissionSlugs());
+        $this->assertNotContains('users.manage', $supervisor->permissionSlugs());
     }
 
     public function test_a_user_without_a_role_holds_nothing(): void
@@ -44,7 +60,7 @@ class AccessManagementTest extends TestCase
         $this->getJson(self::API.'/permissions')->assertOk()->assertJsonCount(count(RolesAndPermissionsSeeder::PERMISSIONS), 'data')
             ->assertJsonFragment(['slug' => 'employees.view', 'read_only' => true]);
 
-        $this->getJson(self::API.'/roles')->assertOk()->assertJsonCount(3, 'data')
+        $this->getJson(self::API.'/roles')->assertOk()->assertJsonCount(4, 'data')
             ->assertJsonFragment(['slug' => 'system_admin', 'administrator' => true, 'users_count' => 1]);
     }
 
@@ -72,7 +88,7 @@ class AccessManagementTest extends TestCase
         $this->postJson(self::API.'/roles/system_admin/permissions', ['permissions' => ['employees.view']])->assertUnprocessable()
             ->assertJsonPath('errors.role.0', __('identity.admin_role_fixed'));
 
-        $this->postJson(self::API.'/roles/general_manager/permissions', ['permissions' => ['employees.manage']])->assertUnprocessable()
+        $this->postJson(self::API.'/roles/general_manager/permissions', ['permissions' => ['employees.update']])->assertUnprocessable()
             ->assertJsonValidationErrors('permissions');
 
         $this->postJson(self::API.'/roles/general_manager/permissions', ['permissions' => ['audit.view_related']])->assertOk();
@@ -98,7 +114,7 @@ class AccessManagementTest extends TestCase
         $this->actingAsStaff($admin);
 
         $this->putJson(self::API."/users/{$user->id}/role", ['role' => 'general_manager'])->assertOk()
-            ->assertJsonPath('data.role.slug', 'general_manager')->assertJsonPath('data.permissions', fn ($p) => ! in_array('employees.manage', $p, true));
+            ->assertJsonPath('data.role.slug', 'general_manager')->assertJsonPath('data.permissions', fn ($p) => ! in_array('employees.update', $p, true));
 
         $this->assertDatabaseHas('audit_events', ['event' => 'access.role_changed', 'actor_id' => $admin->id]);
     }
@@ -192,7 +208,7 @@ class AccessManagementTest extends TestCase
     {
         $target = $this->staffUser();
 
-        foreach ([StaffRole::DataEntry, StaffRole::GeneralManager] as $role) {
+        foreach ([StaffRole::DataEntry, StaffRole::Supervisor, StaffRole::GeneralManager] as $role) {
             $this->actingAsStaff($this->staffUser($role));
             $this->getJson(self::API.'/users')->assertForbidden();
             $this->getJson(self::API.'/roles')->assertForbidden();

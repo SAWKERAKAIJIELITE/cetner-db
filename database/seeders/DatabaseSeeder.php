@@ -4,10 +4,13 @@ namespace Database\Seeders;
 
 use App\Modules\Identity\Database\Seeders\DevUsersSeeder;
 use App\Modules\Identity\Database\Seeders\RolesAndPermissionsSeeder;
+use App\Modules\Settings\Database\Seeders\DevSettingsSeeder;
+use App\Modules\Settings\Database\Seeders\SettingsSeeder;
 use Illuminate\Database\Seeder;
 
 /**
- * Every environment: the catalogue (roles and permissions; later the lists). Local only: demo accounts.
+ * Every environment: the catalogues (roles and permissions, the lists). Local only: demo accounts, the
+ * workbook's sample structure and holidays.
  * Re-run safe.
  */
 class DatabaseSeeder extends Seeder
@@ -15,9 +18,11 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call(RolesAndPermissionsSeeder::class);
+        $this->call(SettingsSeeder::class);
 
         if (app()->environment('local')) {
             $this->call(DevUsersSeeder::class);
+            $this->call(DevSettingsSeeder::class);
         }
     }
 }

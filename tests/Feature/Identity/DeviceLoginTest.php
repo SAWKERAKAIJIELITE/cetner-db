@@ -26,7 +26,7 @@ class DeviceLoginTest extends TestCase
             ->assertJsonPath('user.username', $user->username)
             ->assertJsonPath('user.role.slug', 'data_entry');
 
-        $this->assertContains('employees.manage', $response->json('user.permissions'));
+        $this->assertContains('employees.create', $response->json('user.permissions'));
 
         $token = AccessToken::query()->sole();
         $this->assertSame($device->id, $token->staff_device_id);

@@ -17,7 +17,7 @@ class DevUsersSeeder extends Seeder
         ['admin', 'مدير', 'النظام', '100001', StaffRole::SystemAdmin],
         ['manager', 'المدير', 'العام', '100002', StaffRole::GeneralManager],
         ['entry', 'مدخل', 'البيانات', '100003', StaffRole::DataEntry],
-        // ['entry.two', 'مدخلة', 'البيانات', '100004', StaffRole::DataEntry],
+        ['supervisor', 'مشرف', 'الإدخال', '100005', StaffRole::Supervisor],
     ];
 
     public function run(RegisterStaffUser $action): void
