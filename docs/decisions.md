@@ -199,6 +199,7 @@ Template at the end of this file.
 | `employees.create` | | adding new employees (Step 3) |
 | `employees.update` | | updating the employees' data, closing review cycles (Step 3) |
 | `entries.review` | | the supervisor's review of every entry and change: approve or send back (Steps 3 and 4, D-023) |
+| `identity.review` | | approving the six identity fields, which locks them for good (Step 3, D-034); the administrator's only, by default |
 | `records.view` | ✓ | movements, attendance, conduct, debts (Step 4) |
 | `records.create` | | entering those records (Step 4) |
 | `records.update` | | correcting them (Step 4) |
@@ -258,35 +259,57 @@ Template at the end of this file.
     `.delete`); the migration `split_manage_permissions` carries an already seeded database over.
   - The supervisor keeps `settings.manage` (owner's earlier answer, OD-2), which does include adding list items and
     removing a holiday: the settings are configuration, not the employees' data.
-- **Open:** whether the supervisor's own update takes effect at once or waits for another reviewer (OD-11).
+  - **The supervisor's own update takes effect at once and is logged** (owner, 23 Nov, OD-11): the supervisor is
+    the reviewer. Four eyes for the supervisor's updates may be added later; the change log keeps who made each
+    change and who approved it, so that can be switched on without reshaping the data.
 
 ---
 
 ## 4. Settings (Step 2)
 
-### D-024 The lists of «الإعدادات» are managed data, their kinds are code
+### D-024 Each managed list of «الإعدادات» has its own table
 
-- **Status:** Accepted
-- **Decision:** `lookup_lists` holds the 27 kinds of the workbook's drop-down lists (gender, blood type, marital
-  status, education level, … debt type, work nature), seeded from `ListCatalogue`; nobody adds a kind from the
-  application, because each one is used by fields of the code. `lookup_items` holds their items: added, renamed,
-  reordered, archived and restored by `settings.manage` holders (the administrator and the supervisor, OD-2); never
-  deleted, so a file that uses an item keeps it (D-007). Every signed-in user reads the lists (the forms need them).
-  Integer keys (D-003's exception).
-  - The same word typed another way is a duplicate: `search_key` (ArabicText, D-029 of the recruitment system) is
-    unique in a list; «سكن مع الأهل» is «سكن مع الاهل». An archived duplicate is restored, not added again.
+- **Status:** Accepted (owner, 23 Nov, after comparing the two designs); replaces the first Step 2 design
+- **Context:** Step 2 first stored every list in one pair of tables (`lookup_lists`, `lookup_items`). The owner asked
+  which design is better before the employee's file (about 30 fields that point at lists) is built on it.
+- **Decision:** **one table per list**, 27 tables of the same shape (`genders`, `blood_types`, `marital_statuses`,
+  `education_levels`, … `debt_types`, `work_natures`): `id`, `label`, `search_key` (unique), `code` (unique when set),
+  `sort_order`, `created_by`, `archived_at`, `archived_by`, timestamps. Integer keys (D-003's exception).
+  - Every field of the file is then a **plain foreign key to its own list**: the database itself refuses a blood type
+    in the gender column. With one shared table that needs a trigger checking some 30 columns.
+  - The same as the recruitment system (its nine managed lists are nine tables, its D-031), so the two schemas read
+    the same way and map list to list when they are connected (OD-6).
+  - A list that later needs a column of its own (a movement type's kind, an education level's rank) gets it without
+    touching the others.
+  - **The code is shared, not repeated:** `ListCatalogue` names each list's key, table, label and the workbook's
+    items; one model (`ListItem`, whose table is set per list: `ListItem::queryFor('gender')`), one Action
+    (`ManageListItems`), one controller and one seeder serve the 27 tables. The API did not change:
+    `/settings/lists/{key}` and its items.
+  - Items are added, renamed, reordered, archived and restored by `settings.manage` holders (the administrator and
+    the supervisor, OD-2); never deleted, so a file that uses an item keeps it (D-007). Every signed-in user reads
+    the lists (the forms need them). Nobody adds a list from the application: a new list is a new field, so a
+    migration and a catalogue entry.
+  - The same word typed another way is a duplicate: `search_key` (ArabicText) is unique in the table; «سكن مع الأهل»
+    is «سكن مع الاهل». An archived duplicate is restored, not added again. The same word may be an item of two lists
+    («عمل حر»): two rows in two tables.
   - Not lists: «نعم / لا» (those fields become booleans) and «دورة التحديث» (the system's cycles, Step 3).
-  - The seeder gives a list the workbook's items only when the list is first created; afterwards the items are data.
-- **Rejected:** enums in code (a new item would need a release); one free-text column per field (the workbook's
-  dashboards count by exact text; typing variants would split the counts).
+  - The seeder gives a list the workbook's items only while its table is empty; afterwards the items are data.
+  - Changes of one list are serialised by an advisory lock on its key.
+- **Rejected:** the shared pair `lookup_lists` + `lookup_items` (two tables instead of 27 and the least code, but no
+  foreign-key guarantee of the right list, an unreadable ERD with 30 arrows into one table, and awkward when one list
+  needs its own column); enums in code (a new item would need a release); free text per field (the workbook's way:
+  typing variants split the dashboards' counts).
+- **Consequence:** the Step 2 migration `create_lookup_tables` was rewritten in place (no production installation
+  yet, section 11 of the code documentation): a development database is rebuilt with `php artisan migrate:fresh
+  --seed`.
 
 ### D-025 System items carry a code
 
 - **Status:** Accepted
 - **Decision:** an item the code's logic refers to has a `code` (unique in its list): gender `male` / `female`,
-  employee status `active` / `inactive`, job status `discharged` (مسرح), health `healthy` / `injured` /
+  employee status `active` / `inactive`, job status `discharged` (مسرح), `fled` (فار), `retired` (متقاعد) (Step 3's warnings), health `healthy` / `injured` /
   `chronic_illness`, marital status `single`, housing `rented`, current study `none`, movement `reward` / `deduction`.
-  It can be renamed; it cannot be archived (422, and a CHECK). The seeder ensures every code on every run: an existing
+  It can be renamed; it cannot be archived (422, and a CHECK in each table). The seeder ensures every code on every run: an existing
   item with the same word takes it, otherwise the item is added. Later steps add codes as their rules need them.
 - **Why:** the workbook's checks compare text («مسرح» needs a discharge date, «ايجار» a rent, «مصاب» an injury type);
   a renamed item would silently break them. Codes keep the rules working whatever the label says.
@@ -297,7 +320,7 @@ Template at the end of this file.
 - **Decision:** `org_units` (id, parent, level 1 to 6, name, search key, archived). The workbook repeats six names on
   every row and on every employee; here each unit is one row and an employee will point at the deepest unit
   (Step 3). Siblings have distinct names (top-level units among themselves); cousins may share one («فرع المالية»
-  under two directorates). A unit is archived once its children are (Step 3 adds: and it has no active employee);
+  under two directorates). A unit is archived once its children are and nobody works in it (Step 3: no active file has it as unit or current work unit);
   restored under an active parent; not moved: a reorganisation adds the new unit, moves the people, archives the old
   one, so history keeps the old path. A trigger guards the levels, an active unit's active parent, archiving with active
   children and moving. `GET /settings/org-units` returns every unit with its path (one recursive query), a parent
@@ -339,7 +362,7 @@ Template at the end of this file.
 
 ### D-031 Performance: one PostgreSQL server, indexes and history tables; no distributed database, little cache
 
-- **Status:** Accepted as the plan (owner's questions, 23 Nov); measured in Step 3
+- **Status:** Accepted (owner's questions, 23 Nov); **measured in Step 3** (table below)
 - **Context:** the system is the central file, updated every month, quarter, half-year and year, and keeps what
   changed. About 4,000 people; at worst a few million history rows a year.
 - **Decision:**
@@ -363,6 +386,195 @@ Template at the end of this file.
   when nothing changed. The workbook's four «آخر مراجعة» dates become those rows, so "what was true in March" and "who
   confirmed the third quarter" are queries. Pending changes are stored beside the approved value until reviewed (D-023).
 
+- **Measured** (Step 3, `php artisan employees:generate-demo 4000 --years=3`: 4,000 files, 192,200 change sets,
+  144,000 change items, 192,000 cycle confirmations; one PostgreSQL 16, no cache, requests handled in-process, the
+  median of six):
+
+  | Request | Median | Queries |
+  | ------- | -----: | ------: |
+  | `GET /employees` (page 1 of 4,000, by name) | 59 ms | 14 |
+  | `GET /employees?q=فاطمه الخطيب` (any spelling) | 78 ms | 20 |
+  | `GET /employees?q=500000012` (number prefix) | 76 ms | 15 |
+  | `GET /employees?overdue_cycle=monthly` | 104 ms | 14 |
+  | `GET /employees?contract_ends_within_days=30` | 74 ms | 15 |
+  | `GET /employees?completeness_below=20&sort=completeness` | 6 ms | 7 |
+  | `GET /employees/{id}` (125 fields, pending changes, four cycles) | 22 ms | 18 |
+  | `GET /employees/{id}/history` (36 months) | 20 ms | 10 |
+  | `GET /employee-changes` (the review queue) | 15 ms | 9 |
+
+  The query count per page is fixed (labels resolved in bulk), so it does not grow with the page or the history.
+  Nothing calls for a cache, a read replica or partitioning at this size; the measurement is repeated when the
+  records of Step 4 are in.
+
+---
+
+## 5. The employee's file (Step 3)
+
+### D-032 One row per employee with the 125 input fields; «دليل الحقول» as data
+
+- **Status:** Accepted
+- **Decision:**
+  - `employees` holds one person's **approved** values in 125 typed columns, one per input field of the workbook's
+    `قاعدة بيانات الموظفين`. Every list field is a foreign key to its own list (D-024); the workbook's six
+    organisational columns (U, AP to AT) are one `org_unit_id` (D-026), and its two «جهة العمل الحالية» columns
+    (AV, AW) are one `current_work_unit_id`, the unit someone works in when it differs from their own (OD-15).
+    «نعم / لا» fields are booleans, null when unknown. Phones and national numbers keep their leading zeros.
+  - Not columns: the workbook's 11 formulas (D-035), its 13 document links (Step 5), its four «آخر مراجعة» dates
+    (D-036). 125 + 11 + 13 + 4 + the merged organisational columns = the workbook's 159.
+  - `FieldCatalogue` describes each field: workbook column, Arabic label, section, cycle, type and limits, whether it
+    counts for completeness (the workbook's ✔: 67 of them, plus 5 documents in Step 5), whether it is one of the six
+    identity fields (D-034). The migration and the checks are written out from it.
+  - `field_definitions` is the same guide as data: `GET /field-definitions` gives the desktop app every field's
+    label, section, type, list, cycle and flags, so the forms are built from it. The settings managers change two
+    things, whether a field counts for completeness and its cycle; every active file's completeness is recomputed in
+    the same transaction. Labels, types and the identity flag follow the code on every seeding.
+  - The database checks what it can: ranges (graduation years 1950 to 2100, rates 0 to 100, Quran parts 0 to 30,
+    counts), digits and phone formats, names without digits, dates 1900 to 2200, a contract that does not end before
+    it starts, unique national and personal numbers (partial unique indexes), nothing in a file before it is approved.
+  - A new file needs the three names (to be found by); everything else may come later.
+- **Rejected:** several 1:1 tables by section (more joins for every read of a file that is always read whole, and
+  each change set would have to know which table a field lives in); an entity-attribute-value table (no types, no
+  constraints, no foreign keys, slow filters).
+
+### D-033 Every entry is a change set: pending beside the approved value, then history
+
+- **Status:** Accepted (owner: the supervisor reviews anything; the file shows the old value with the change pending
+  beside it; the supervisor's own update takes effect at once and is logged; D-023)
+- **Decision:**
+  - Every addition, change and cycle confirmation is a **change set** (`employee_change_sets`: kind, author, time,
+    note, status) with one **item** per changed field (`employee_change_items`: field, the approved value when
+    submitted, the new value). Only real changes are kept: a value sent unchanged, typed differently («٠٩٩١ ٢٣٤»,
+    "176.0") or not, is dropped; a submission with no change is refused.
+  - **Pending** sets do not touch the file. `GET /employees/{id}` returns each field's approved `value` with the
+    pending proposals beside it (`pending`: value, display, author, time). A new employee's file exists from the
+    start, empty and `pending`, with its values in the set; it joins the lists once approved.
+  - **Who applies at once:** an author holding `entries.review` (the supervisor, the administrator) applies their own
+    set at once, logged as `self_approved` (a CHECK keeps `self_approved` equal to "reviewer is the author"). Data
+    entry's sets wait. Nobody approves their own pending set.
+  - **Approving** writes the values; **refusing** needs a reason and sends it back (a refused new employee's file
+    stays, `rejected`); the author may **withdraw** a pending set (`withdrawn`).
+  - **Stale sets are refused, not merged:** approving checks that every item's old value is still the file's value;
+    if another change came first, the set is refused with the fields named, and is sent again on the current values.
+  - **The approved items are the history:** what changed, from what, to what, who entered it, who approved it, when,
+    in which cycle (`GET /employees/{id}/history`). Triggers keep items and confirmations append-only and let a set
+    change once, from pending to its outcome; nothing is deleted. Four eyes for the supervisor's own updates can be
+    switched on later without reshaping anything: it is the `self_approved` rule.
+  - A national or personal number is one person's: refused when another file has it or another pending set
+    proposes it; the unique index settles a race at approval, said in Arabic.
+- **Rejected:** saving into the file and keeping an audit copy (the reviewer would approve something already in
+  effect; "show the old value with the change beside it" would need the old value reconstructed); one pending change
+  per field (two data entry employees could not work on one file).
+
+### D-034 The identity lock: once the administrator approves an identity, nobody changes it
+
+- **Status:** Accepted (owner, 24 Nov); replaces the first Step 3 guard (at most two identity fields per change),
+  which the owner rightly found useless: split into several changes it stopped nothing that the administrator's
+  approval did not stop already.
+- **Context:** the supervisor updates at once (D-023). Overwriting a file's names and numbers would erase one person
+  and put another in their place, with the first person's history, without anybody approving a deletion or an addition.
+- **Decision:**
+  - **Six identity fields:** الرقم الذاتي، الرقم الوطني، الاسم، اسم الأب، اسم الأم، العائلة (`identity` in the
+    catalogue and in `GET /field-definitions`; not editable from the application). Gender, birth date, birth place and
+    registry number are ordinary fields.
+  - **Before the lock**, an identity change (data entry's or the supervisor's) waits for `identity.review` (the
+    administrator by default); the supervisor applies everything else at once but not this.
+  - **The lock:** a file's identity is locked when a holder of `identity.review` approves it: by adding the file,
+    by approving its addition, by approving a change of its identity, or with `POST /employees/{id}/identity/lock`
+    (for a file whose addition the supervisor approved). `GET /employees?identity_locked=0` is the administrator's
+    list of identities to confirm. The lock needs the three names and no identity change waiting.
+  - **After the lock, a locked value is refused for everyone, the administrator included**, in the application
+    (422, naming the fields) and in the database (a trigger on `employees` refuses changing a locked value, undoing
+    the lock or touching the fingerprint). A change sent before the lock and approved after it is refused.
+  - **An identity field still empty may be filled once** (الرقم الذاتي is often granted after the file exists, the
+    mother's name may come later), approved by `identity.review`; then it is locked too.
+  - The history keeps every value an identity field ever had before its lock.
+- **No correction after the lock (owner, 24 Nov, OD-14):** a wrong value that was locked cannot be corrected through
+  the application at all; the administrator checks the identity against the documents before approving it. The only
+  way out is outside the application (a database administrator disabling the trigger), which the nightly fingerprint
+  check then reports (D-038).
+- **Rejected:** a limit of identity fields per change (useless, see above); locking without the administrator (the
+  owner's rule is "once approved from admin"); a reasoned correction by the administrator after the lock (owner: the
+  check happens before the lock, not after).
+
+### D-035 What is derived: stored when it depends on the file, computed when it depends on today
+
+- **Status:** Accepted
+- **Decision:**
+  - **Stored** with every approved change (and when the definitions change): the name's search key (any spelling,
+    trigram index), the completeness percentage (the workbook's «نسبة اكتمال البيانات») and the missing counted fields
+    by cycle («الحقول الناقصة حسب دورة التحديث»). Lists filter and sort on them without computing anything.
+  - **Computed when read**, because they change with the calendar: age, years of service (the workbook's formula:
+    from the earliest of assignment, appointment and contract signature to the discharge date or today, in years
+    with one decimal), days left on the contract, the unit's path. Today is the Damascus day (D-012).
+  - Not yet: the debts (`عليه ديون`, `إجمالي الديون المتبقية`) come with the debts record (Step 4); the documents
+    count and the five counted documents with Step 5.
+
+### D-036 Each cycle's confirmation is a row; overdue is computed
+
+- **Status:** Accepted
+- **Decision:** the workbook's four «آخر مراجعة» dates become `employee_reviews`: one row per file, cycle and period
+  (monthly 2026-11, quarterly 2026-Q4, semi-annual 2026-H2, annual 2026), written when the confirmation is approved,
+  with who confirmed and who approved. `POST /employees/{id}/reviews` confirms a cycle for the current period with
+  the changes found among that cycle's fields, or none; once per period (a partial unique index). A cycle is
+  **overdue** when it was never confirmed or its last confirmation is older than its window in the branch settings
+  (35, 100, 190, 370 days), as the workbook colours it; `overdue_cycle` lists those files. "Who confirmed the third
+  quarter" and "when was this file last reviewed" are queries.
+
+### D-037 The workbook's coloured cells are warnings, not refusals
+
+- **Status:** Accepted
+- **Decision:** the file returns `warnings`: «مسرح» without a discharge date; «فعال» while the job status says the
+  person left («مسرح», «فار», «متقاعد», by their codes, D-025); a contract that ended or ends within 30 days; each
+  overdue cycle. They never block a save, because the missing piece is often not known yet; hard rules (types,
+  ranges, the contract's order, unique numbers) are refused.
+
+### D-038 The identity fingerprint: a keyed hash, for proof, not as the identifier
+
+- **Status:** Accepted (owner's question, 24 Nov: "is a hash useful here, as a thumb fingerprint that doesn't change?")
+- **Decision:**
+  - **The stable "thumbprint" of a person is the file's UUID** (D-003): it never changes and means nothing outside the
+    system. A hash of the identity cannot play that role: it changes with any letter of what it hashes.
+  - **What a hash is good for here is proof.** At the lock, `identity_hash` = HMAC-SHA256 of the six identity values,
+    keyed with `HR_IDENTITY_HASH_KEY` (its own key, kept with the backups; APP_KEY if unset). `php artisan
+    employees:verify-identity`, scheduled nightly at 02:30 Damascus time, recomputes every fingerprint: a mismatch
+    means an identity was changed around the application and the trigger (someone with database rights), and is
+    logged as critical and recorded in the audit log (`employees.identity_check_failed`).
+  - **Keyed, not a plain SHA-256:** a national number has eleven digits; without a key, anyone holding the hashes
+    could try every number and read them back. With the key they cannot.
+  - **Later uses:** when the national number is encrypted (D-030), the keyed hash is what stays searchable and
+    unique; and it lets this system and the recruitment system recognise the same person without sending the
+    number itself (OD-6).
+- **Rejected:** the hash as the primary key (changes with corrections, reveals the number without a key); a hash of
+  the whole file (every monthly change would change it; the history already records each change).
+
+### D-039 History and logs: keep the record, prune the technical, never duplicate
+
+- **Status:** Accepted (owner's question, 24 Nov: the balance between flooding the database with logs and
+  preventing security issues)
+- **Measured:** 4,000 files with three years of monthly and quarterly confirmations and a change a month take about
+  160 MB with their indexes, about 55 MB a year (192,200 change sets at 363 bytes, 192,000 confirmations at 348 bytes,
+  144,000 changed fields at 214 bytes). At that rate twenty years fit in a few gigabytes. The volume is not the risk;
+  keeping the wrong things, or the same thing twice, is.
+- **Decision:**
+  - **The record is kept for good:** change sets and their items, cycle confirmations, the audit log. They are the
+    security: they answer "who changed this, from what, who approved it". They are append-only (triggers).
+  - **Only what changed is stored:** a change keeps its changed fields, never a copy of the file; a value sent
+    unchanged is dropped; a confirmation without changes is one small row.
+  - **Nothing is stored twice:** the audit log says who did what and points to the change set (`related_ids`); the
+    values are only in the change items.
+  - **Reads are not logged** (opening a file, a list); exports will be (Step 6), because an export takes data away.
+  - **The application log is never deleted either (owner, 24 Nov):** one file a day (`LOG_STACK=daily`,
+    `LOG_DAILY_DAYS=0`), in `storage/logs`, which the backups include. It holds every failed login (the reason, the
+    device, the username as typed, the address; never the password) and the technical lines. It stays a file and not
+    a table, so that someone trying passwords by the thousand fills a cheap file, not the database (the attempts are
+    also throttled). Unlike the audit log, a file can be edited by someone with rights on the server; sending it to a
+    separate log server is the step after (Step 7, deployment).
+  - **Only what is not a record is removed:** login challenges (single-use random numbers) a day after they expire
+    (`model:prune`) and expired tokens after two days (`sanctum:prune-expired`). Neither says who did what: the
+    successful login is in the audit log (`auth.login`), the failed one in the application log.
+  - **When a table grows large** (hundreds of millions of rows, decades away at this scale), the audit log and the
+    history are partitioned by year and old years moved to archive storage; nothing is deleted.
+
 ---
 
 ## Open questions
@@ -379,7 +591,11 @@ Template at the end of this file.
 | OD-8 | What does the supervisor review, and what does the file show until approval? | **Answered** (23 Nov): anything; the old value with the pending change beside it (D-023). |
 | OD-9 | Does the supervisor also enter data? | **Answered** (23 Nov): reads and updates; does not add or delete (D-023). |
 | OD-10 | «المسمى الوظيفي»: a list or free text? | **Answered** (23 Nov): a drop-down list (`job_title`, filled by the settings managers). |
-| OD-11 | The supervisor's own update: does it take effect at once (audited), or wait for another supervisor or the administrator? | **Open: needed for Step 3.** Assumed until answered: at once, audited, since the supervisor is the reviewer. |
+| OD-11 | The supervisor's own update: at once, or reviewed by another? | **Answered** (23 Nov): at once and logged; four eyes for it possibly later (D-023). |
+| OD-13 | One pair of lookup tables or one table per list? | **Answered** (23 Nov): one table per list (D-024). |
+| OD-14 | The identity lock: can a wrong locked value be corrected? | **Answered** (24 Nov): no. Six fields, locked once the administrator approves them, changed by nobody; the administrator checks them before approving (D-034). |
+| OD-15 | The workbook's «جهة العمل الحالية - مستوى تنظيمي 2 / 3» (AV, AW): the unit someone actually works in when it differs from their own? | **Assumed:** yes, one optional `current_work_unit_id` (D-032). |
+| OD-16 | What must a new file have? | **Assumed:** the three names only; the rest may come later and shows as missing (D-032). |
 | OD-12 | Scale and performance (owner's questions, 23 Nov): cache, distributed database, history. | **Answered in D-031.** |
 
 ---

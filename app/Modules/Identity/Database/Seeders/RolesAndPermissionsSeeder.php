@@ -22,6 +22,8 @@ class RolesAndPermissionsSeeder extends Seeder
         'employees.update' => ['تحديث بيانات الموظفين ودورات التحديث', false],
         // The supervisor's review of every entry and change (Steps 3 and 4, D-023)
         'entries.review' => ['مراجعة الإدخالات والتعديلات واعتمادها أو ردّها', false],
+        // The six identity fields: approving them, which locks them for good (D-034). The administrator's.
+        'identity.review' => ['اعتماد بيانات الهوية وتثبيتها (الرقم الذاتي، الرقم الوطني، الاسم، الأب، الأم، العائلة)', false],
         // The employees' records: movements, monthly attendance, conduct, debts (Step 4)
         'records.view' => ['عرض سجلات الحركات والدوام والسلوك والديون', true],
         'records.create' => ['إدخال سجلات الحركات والدوام والسلوك والديون', false],

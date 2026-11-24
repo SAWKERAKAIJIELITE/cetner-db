@@ -33,6 +33,13 @@ final class AuditEvents
         'settings.holiday_updated' => 'تعديل عطلة رسمية',
         'settings.holiday_deleted' => 'حذف عطلة رسمية',
         'settings.work_updated' => 'تعديل إعدادات الفرع',
+        'employees.change_submitted' => 'إرسال إضافة أو تعديل لملف موظف',
+        'employees.change_approved' => 'اعتماد إضافة أو تعديل لملف موظف',
+        'employees.change_rejected' => 'ردّ إضافة أو تعديل لملف موظف',
+        'employees.change_withdrawn' => 'سحب إضافة أو تعديل لملف موظف',
+        'employees.identity_locked' => 'تثبيت هوية موظف (لا تُعدّل بعدها)',
+        'employees.identity_check_failed' => 'تحقق البصمة: هوية مثبتة تغيّرت خارج النظام',
+        'employees.field_definition_updated' => 'تعديل تعريف حقل في دليل الحقول',
     ];
 
     public static function label(string $event): string

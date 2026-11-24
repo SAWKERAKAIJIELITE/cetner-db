@@ -91,7 +91,15 @@ final class ManageOrgUnits
                 throw ValidationException::withMessages(['unit' => __('settings.org_has_active_children')]);
             }
 
-            // Step 3 adds: no active employee in the unit.
+            // Nobody works in an archived unit (D-026).
+            $people = DB::table('employees')->where('file_status', 'active')
+                ->where(fn ($q) => $q->where('org_unit_id', $unit->getKey())->orWhere('current_work_unit_id', $unit->getKey()))
+                ->count();
+
+            if ($people > 0) {
+                throw ValidationException::withMessages(['unit' => __('settings.org_has_employees', ['count' => $people])]);
+            }
+
             $unit->forceFill(['archived_at' => now(), 'archived_by' => $actor->getKey()])->save();
 
             AuditTrail::record('settings.org_unit_archived', $actor, ['org_unit_id' => $unit->getKey(), 'name' => $unit->name]);

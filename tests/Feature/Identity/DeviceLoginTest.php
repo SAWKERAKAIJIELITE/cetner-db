@@ -9,6 +9,7 @@ use App\Modules\Identity\Models\DeviceLoginChallenge;
 use App\Modules\Identity\Support\DeviceCrypto;
 use App\Support\BusinessDay;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 use Tests\Support\TestDeviceKeys;
 use Tests\TestCase;
 
@@ -113,6 +114,22 @@ class DeviceLoginTest extends TestCase
         }
 
         $this->assertSame(0, AccessToken::query()->count());
+    }
+
+    public function test_a_failed_login_is_logged_with_who_and_where_never_the_password(): void
+    {
+        $user = $this->staffUser();
+        $device = $this->approvedDevice($user);
+        Log::spy();
+
+        $this->loginThrough($device, $user->username, password: 'Wrong1!pass')->assertUnprocessable();
+
+        Log::shouldHaveReceived('warning')->once()->withArgs(fn (string $message, array $context) => $message === 'staff_login_failed'
+            && $context['reason'] === 'wrong_password'
+            && $context['device_id'] === $device->id
+            && $context['username'] === $user->username
+            && $context['ip'] === '127.0.0.1'
+            && ! in_array('Wrong1!pass', $context, true));
     }
 
     public function test_a_challenge_is_given_to_approved_devices_only(): void

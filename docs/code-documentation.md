@@ -1,7 +1,7 @@
 # HR Backend: Technical Documentation (نظام إدارة القوى البشرية)
 
-Status: **Step 2** (Step 1: foundation, staff identity and roles, device-bound login, access and user management,
-audit log; Step 2: settings: the managed lists, the organisational structure, holidays, branch settings).
+Status: **Step 3** (Step 1: foundation, staff identity and roles, device-bound login, access and user management,
+audit log; Step 2: settings; Step 3: the employee's file with review, history, identity guard and cycles).
 Updated at the end of every step.
 
 Audience: developers joining or reviewing the backend.
@@ -29,7 +29,7 @@ desktop app only (React + Electron, OD-3) and log in from approved devices (D-01
 | 1 | Identity | Done | Staff users, one role each (data entry, general manager, administrator), device-bound login, access and user management, first administrator from the shell |
 | 1 | Audit | Done | `audit_events`, append-only, written with each action; read API |
 | 2 | Settings | Done | «الإعدادات»: 27 managed lists (yes/no and the update cycle are not lists), the six-level organisational structure, holidays, the branch settings with the four review windows |
-| 3 | Employees | Planned | «قاعدة بيانات الموظفين» and «دليل الحقول»: the 159 fields with the sheet's checks, field definitions per update cycle, completeness and missing fields, review periods per cycle, change history, the supervisor's review (D-023, OD-8) |
+| 3 | Employees | Done | «قاعدة بيانات الموظفين» and «دليل الحقول»: the 159 fields with the sheet's checks, field definitions per update cycle, completeness and missing fields, review periods per cycle, change history, the supervisor's review (D-023, OD-8) |
 | 4 | Records | Planned | «سجل الحركات», «سجل الدوام الشهري», «سجل السلوك الوظيفي», «سجل الديون» |
 | 5 | Documents | Planned | The 13 attachments (photo, ID, family statement, certificate, …) as uploaded files instead of links |
 | 6 | Views and reports | Planned | «عرض الفرد» and the three forms as PDF, «داش بورد الموظفين», «داش بورد الحركات», Excel exports |
@@ -134,8 +134,21 @@ app/
     │   ├── Actions/        ManageListItems, ManageOrgUnits, ManageHolidays, UpdateWorkSettings
     │   ├── Database/       Migrations (3), Seeders (SettingsSeeder, DevSettingsSeeder)
     │   ├── Http/           Controllers (LookupList, OrgUnit, Holiday, WorkSettings), Requests, Resources
-    │   ├── Models/         LookupList, LookupItem, OrgUnit, Holiday, WorkSettings
-    │   ├── Support/        ListCatalogue (the 27 lists, the workbook's items, system codes), OrgUnitTree
+    │   ├── Models/         ListItem (one model for the 27 list tables), OrgUnit, Holiday, WorkSettings
+    │   ├── Support/        ListCatalogue (each list's key, table, label, the workbook's items, system codes),
+    │   │                   ManagedList (a list and the way to its items), OrgUnitTree
+    │   └── routes.php
+    ├── Employees/
+    │   ├── Actions/        SubmitEmployeeChanges (create, update, review), ApplyChangeSet, DecideChangeSet
+    │   │                   (approve, reject, withdraw), UpdateFieldDefinition
+    │   ├── Console/        GenerateDemoEmployeesCommand (employees:generate-demo, development only)
+    │   ├── Database/       Migrations (2), Seeders (FieldDefinitionsSeeder)
+    │   ├── Enums/          Cycle, ChangeSetKind, ChangeSetStatus, FileStatus
+    │   ├── Http/           Controllers (Employee, ChangeSet, FieldDefinition), Requests, Resources
+    │   ├── Models/         Employee, EmployeeChangeSet, EmployeeChangeItem, EmployeeReview, FieldDefinition
+    │   ├── Support/        FieldCatalogue (the 125 fields), FieldDefinitions, FieldValues (normal forms, rules),
+    │   │                   ReviewRights, EmployeeDerived, EmployeeComputed, EmployeeWarnings, ReviewStatus,
+    │   │                   EmployeeQuery, ValueLabels
     │   └── routes.php
     └── Audit/
         ├── Database/Migrations (1)
@@ -226,6 +239,7 @@ not editable). The general manager's role takes read-only permissions only.
 | `employees.create` | | ✓ | — | — | ✓ |
 | `employees.update` | | ✓ | ✓ | — | ✓ |
 | `entries.review` | | — | ✓ | — | ✓ |
+| `identity.review` | | — | — | — | ✓ |
 | `records.view` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `records.create` | | ✓ | — | — | ✓ |
 | `records.update` | | ✓ | ✓ | — | ✓ |
@@ -364,7 +378,7 @@ Every failure writes `staff_login_failed` to the log with the real reason (never
 | Seeder | Runs | Purpose |
 | ------ | ---- | ------- |
 | `RolesAndPermissionsSeeder` | every environment | The catalogue (upsert) and the roles' defaults when first created |
-| `SettingsSeeder` | every environment | The 27 lists; the workbook's items when a list is first created; system codes ensured every run (section 9) |
+| `SettingsSeeder` | every environment | The 27 lists' items: the workbook's while a list's table is empty; system codes ensured every run (section 9) |
 | `DevUsersSeeder` | `APP_ENV=local` only | `admin` (system administrator), `supervisor`, `manager` (general manager), `entry` and `entry.two` (data entry); password `Password1!` |
 | `DevSettingsSeeder` | `APP_ENV=local` only | The workbook's sample structure (21 units) and its 2026 holidays (D-029) |
 
@@ -421,51 +435,62 @@ logins are in the application log only.
 
 ### 9.1 Managed lists (D-024, D-025)
 
-**`lookup_lists`**: `id`, `key` unique (CHECK `^[a-z_]+$`), `label_ar`, `description_ar` (the fields that use it).
-Created by `SettingsSeeder` from `ListCatalogue` only.
+**One table per list**, 27 tables of the same shape, so every field of the employee's file is a plain foreign key
+to its own list:
 
-**`lookup_items`**: `id`, `lookup_list_id` (RESTRICT), `label` (CHECK not blank), `search_key` (unique in the
-list), `code` (CHECK `^[a-z_]+$`, unique in the list when set), `sort_order` (CHECK ≥ 0), `created_by`,
-`archived_at`, `archived_by` (CHECK: only when archived), timestamps. CHECK: a coded item is never archived.
+| Column | Notes |
+| ------ | ----- |
+| id | bigint |
+| label | CHECK not blank |
+| search_key | `ArabicText::searchKey(label)`, unique: the same word typed another way is one item |
+| code | set for a system item (D-025); CHECK `^[a-z_]+$`; unique |
+| sort_order | CHECK ≥ 0; the order the forms show |
+| created_by | staff user (RESTRICT); null for seeded items |
+| archived_at, archived_by | CHECK: `archived_by` only when archived; CHECK: a coded item is never archived |
+
+The code is shared: `ListCatalogue::LISTS` maps each key to `[table, label, used by, items]`; `ListItem` is one
+Eloquent model whose table is set per list (`ListItem::forList($key)`, `ListItem::queryFor($key)`); `ManagedList`
+is a list as an object (`find`, `findOrFail`, `all`, `query()`, `withItems()`). There is no table of lists: the
+lists are the catalogue's. The migration names the 27 tables itself (a migration keeps doing what it did).
 
 The 27 lists, with the fields that use them:
 
-| Key | List | Used by | System codes |
-| --- | ---- | ------- | ------------ |
-| `gender` | الجنس | الجنس | `male`, `female` |
-| `blood_type` | فصيلة الدم | فصيلة الدم | |
-| `marital_status` | الحالة الاجتماعية | الحالة الاجتماعية | `single` |
-| `education_level` | التحصيل العلمي | الدراسة الأولى، الدراسة الثانية، التحصيل العلمي | |
-| `current_study` | الدراسة الحالية | الدراسة الحالية | `none` (لا) |
-| `study_year` | السنة الدراسية | السنة الدراسية الحالية | |
-| `position_level` | المستوى التنظيمي (المنصب) | المستوى التنظيمي (المنصب) | |
-| `job_title` | المسمى الوظيفي | المسمى الوظيفي (التخصص); empty in the workbook (OD-10) | |
-| `employee_status` | حالة الموظف | حالة الموظف | `active`, `inactive` |
-| `job_status` | الحالة الوظيفية | الحالة الوظيفية | `discharged` (مسرح) |
-| `org_stage` | المرحلة التنظيمية | المرحلة التنظيمية | |
-| `org_stage_level` | مستوى المرحلة التنظيمية | مستوى المرحلة التنظيمية | |
-| `contract_type` | نوع العقد | نوع العقد | |
-| `work_schedule` | نوع الدوام | نوع الدوام | |
-| `health_status` | الحالة الصحية | الحالة الصحية | `healthy`, `injured`, `chronic_illness` |
-| `ability_level` | مستوى القدرة (خطابة / تدريس) | القدرة على الخطابة، القدرة على التدريس | |
-| `housing_type` | نوع السكن | نوع السكن الحالي | `rented` (ايجار) |
-| `vehicle_ownership` | ملكية المركبة | ملكية السيارة، ملكية الدراجة | |
-| `guardian_relation` | صلة القرابة بالوصي | صلة القرابة بالوصي | |
-| `external_entity_type` | نوع الجهة الأخرى | نوع الجهة الأخرى | |
-| `external_link_type` | نوع الارتباط | نوع الارتباط | |
-| `external_schedule` | نظام الدوام بالجهة الأخرى | نظام الدوام بالجهة الأخرى | |
-| `movement_type` | نوع الحركة | سجل الحركات | `reward`, `deduction` |
-| `conduct_type` | نوع السجل السلوكي | سجل السلوك الوظيفي | |
-| `conduct_status` | حالة المعالجة | سجل السلوك الوظيفي | |
-| `debt_type` | نوع الدين | سجل الديون | |
-| `work_nature` | طبيعة العمل | طبيعة العمل | |
+| Key | Table | List | Used by | System codes |
+| --- | ----- | ---- | ------- | ------------ |
+| `gender` | `genders` | الجنس | الجنس | `male`, `female` |
+| `blood_type` | `blood_types` | فصيلة الدم | فصيلة الدم | |
+| `marital_status` | `marital_statuses` | الحالة الاجتماعية | الحالة الاجتماعية | `single` |
+| `education_level` | `education_levels` | التحصيل العلمي | الدراسة الأولى، الدراسة الثانية، التحصيل العلمي | |
+| `current_study` | `current_studies` | الدراسة الحالية | الدراسة الحالية | `none` (لا) |
+| `study_year` | `study_years` | السنة الدراسية | السنة الدراسية الحالية | |
+| `position_level` | `position_levels` | المستوى التنظيمي (المنصب) | المستوى التنظيمي (المنصب) | |
+| `job_title` | `job_titles` | المسمى الوظيفي | المسمى الوظيفي (التخصص); empty in the workbook, filled by the settings managers (OD-10) | |
+| `employee_status` | `employee_statuses` | حالة الموظف | حالة الموظف | `active`, `inactive` |
+| `job_status` | `job_statuses` | الحالة الوظيفية | الحالة الوظيفية | `discharged` (مسرح) |
+| `org_stage` | `org_stages` | المرحلة التنظيمية | المرحلة التنظيمية | |
+| `org_stage_level` | `org_stage_levels` | مستوى المرحلة التنظيمية | مستوى المرحلة التنظيمية | |
+| `contract_type` | `contract_types` | نوع العقد | نوع العقد | |
+| `work_schedule` | `work_schedules` | نوع الدوام | نوع الدوام | |
+| `health_status` | `health_statuses` | الحالة الصحية | الحالة الصحية | `healthy`, `injured`, `chronic_illness` |
+| `ability_level` | `ability_levels` | مستوى القدرة (خطابة / تدريس) | القدرة على الخطابة، القدرة على التدريس | |
+| `housing_type` | `housing_types` | نوع السكن | نوع السكن الحالي | `rented` (ايجار) |
+| `vehicle_ownership` | `vehicle_ownerships` | ملكية المركبة | ملكية السيارة، ملكية الدراجة | |
+| `guardian_relation` | `guardian_relations` | صلة القرابة بالوصي | صلة القرابة بالوصي | |
+| `external_entity_type` | `external_entity_types` | نوع الجهة الأخرى | نوع الجهة الأخرى | |
+| `external_link_type` | `external_link_types` | نوع الارتباط | نوع الارتباط | |
+| `external_schedule` | `external_schedules` | نظام الدوام بالجهة الأخرى | نظام الدوام بالجهة الأخرى | |
+| `movement_type` | `movement_types` | نوع الحركة | سجل الحركات | `reward`, `deduction` |
+| `conduct_type` | `conduct_types` | نوع السجل السلوكي | سجل السلوك الوظيفي | |
+| `conduct_status` | `conduct_statuses` | حالة المعالجة | سجل السلوك الوظيفي | |
+| `debt_type` | `debt_types` | نوع الدين | سجل الديون | |
+| `work_nature` | `work_natures` | طبيعة العمل | طبيعة العمل | |
 
 Not lists: «نعم / لا» (booleans) and «دورة التحديث» (the system's cycles, Step 3).
 
 Rules (`ManageListItems`): an item is added at the end unless `sort_order` is given; the same word typed another
 way is a duplicate (422, naming the existing item; an archived one is to be restored); renaming checks the same;
 a system item is renamed but not archived (422); reordering takes every active item's id once (archived items
-follow); each list's changes are serialised (row lock on the list).
+follow); each list's changes are serialised (an advisory lock on the list's key).
 
 ### 9.2 Organisational structure (D-026)
 
@@ -524,7 +549,8 @@ Base path `/api/v1/staff/settings`. Reading: any signed-in user. Changing: `sett
 | GET | `/work` | The branch settings, `review_windows` grouped |
 | PUT | `/work` | The fields sent (`review_window_monthly` …); the rules between fields checked with the stored values |
 
-Item, unit and holiday ids are integers; an item is reached through its own list only (404 otherwise).
+Item, unit and holiday ids are integers. An item's id is its own list's (each list has its own table and ids);
+an unknown list key or an id not in that list is 404.
 
 ### 9.5 Audit events
 
@@ -536,25 +562,152 @@ Item, unit and holiday ids are integers; an item is reached through its own list
 | `settings.holiday_added`, `_updated`, `_deleted` | إضافة / تعديل / حذف عطلة رسمية |
 | `settings.work_updated` | تعديل إعدادات الفرع (each changed field with `from` and `to`) |
 
-## 10. Testing
+## 10. Employees module (Step 3)
+
+The workbook's `قاعدة بيانات الموظفين` and `دليل الحقول`. Decisions D-032 to D-037.
+
+### 10.1 Tables
+
+**`employees`**: `id` uuid; `file_status` (`pending` added and waiting, `active`, `rejected`, `withdrawn`);
+derived and stored (D-035): `search_name` (trigram index), `completeness` (0 to 100), `missing_fields` (cycle =>
+keys); the **125 input fields** as typed columns (list fields are foreign keys to their list's table, units to
+`org_units`); `created_by`, `activated_at`, `identity_locked_at`, `identity_locked_by`, `identity_hash` (D-034, D-038),
+timestamps. 43 CHECKs (ranges, formats, names, dates, contract order,
+an unapproved file is empty); partial unique indexes on `national_number` and `personal_number`; indexes on status,
+job status, unit, contract end, completeness.
+
+**`field_definitions`**: `key` (the column), `label_ar`, `section_ar`, `workbook_column`, `type`, `list_key`,
+`cycle` (CHECK), `counts_for_completeness`, `identity`, `sort_order`, `updated_by`. Seeded from `FieldCatalogue`;
+`counts_for_completeness` and `cycle` are the settings managers' after the first seeding.
+
+**`employee_change_sets`**: `id` uuid, `employee_id`, `kind` (`create`, `update`, `review`), `cycle` and `period`
+(reviews only), `status` (`pending`, `approved`, `rejected`, `withdrawn`), `needs_identity_review`, `note`,
+`submitted_by`, `submitted_at`, `self_approved`, `reviewed_by`, `reviewed_at`, `review_note`. CHECKs: the decision's
+columns follow the status; a refusal has a reason; `self_approved` ⇔ reviewer is the author. Partial unique index:
+one pending or approved confirmation per file, cycle and period. Triggers: never deleted; changed once, from
+pending, and only the decision's columns.
+
+Trigger `employees_identity_locked` on `employees`: once `identity_locked_at` is set, a non-empty identity value is
+not changed, the lock is not undone, and the fingerprint changes only when an empty identity field is filled.
+
+**`employee_change_items`**: `change_set_id`, `field` (foreign key to `field_definitions`), `old_value`,
+`new_value` (jsonb scalars in the normal form of `FieldValues`). Unique per set and field. Append-only.
+
+**`employee_reviews`**: `employee_id`, `cycle`, `period`, `reviewed_on`, `change_set_id` (unique),
+`confirmed_by`, `approved_by`. Unique per file, cycle and period. Append-only.
+
+### 10.2 The fields
+
+125 input fields in 18 sections; 67 count for completeness; 6 are the identity fields (الرقم الذاتي، الرقم الوطني،
+الاسم، اسم الأب، اسم الأم، العائلة), locked once the administrator approves them (D-034). By cycle: once 32,
+monthly 26, quarterly 26, semi-annual 29, annual 12. The full list with types, limits, lists and flags is
+`GET /field-definitions` (and `FieldCatalogue::FIELDS`).
+
+Values (`FieldValues`): text trimmed, spaces collapsed; Arabic digits as ASCII in numbers, dates, phones and
+national numbers; phones without spaces, dashes or brackets; e-mails lowercase; decimals with their scale ("176.0",
+"350000.00"); booleans true / false / null; list and unit fields by id. Errors are keyed `values.<field>` and name
+the field in Arabic. A list item or unit must be active (an archived one already in the file stays).
+
+### 10.3 Rules
+
+| Who | Adds a file | Changes a file | Confirms a cycle | Approves, refuses | Locks an identity |
+| --- | ----------- | -------------- | ---------------- | ----------------- | ----------------- |
+| Data entry | waits | waits | waits | no | no |
+| Supervisor | no | at once (identity: waits for the administrator) | at once | yes, not identity, not their own | no |
+| General manager | no | no | no | no | no |
+| Administrator | at once (locks) | at once | at once | yes, identity too (locks), not their own | yes |
+
+- Only real changes are kept; nothing changed → 422.
+- Identity lock (D-034): any identity field → `needs_identity_review`, approved by `identity.review` only, which locks
+  the identity. Once locked, a non-empty identity value is refused for everyone (422, and the trigger); an empty one
+  may be filled once, the same way. A set waiting when the lock happened is refused at approval.
+- Approval refuses a stale set (a field changed since) → 422 naming the fields.
+- A national or personal number in another file or another pending set → 422.
+- A confirmation takes only its cycle's fields, once per period.
+- Archiving a unit with active files in it → 422 (Settings).
+
+### 10.4 API reference
+
+Base path `/api/v1/staff`.
+
+| Method | Path | Permission | Purpose |
+| ------ | ---- | ---------- | ------- |
+| GET | `/field-definitions` | signed in | The guide: `key`, `label`, `section`, `workbook_column`, `type`, `list`, `min`, `max`, `cycle`, `counts_for_completeness`, `identity` |
+| PUT | `/field-definitions/{key}` | `settings.manage` | `counts_for_completeness` and/or `cycle`; every active file's completeness follows |
+| GET | `/employees` | `employees.view` | 25 per page. `q` (a name in any spelling, or the start of a personal or national number), `org_unit_id` (+ `include_sub_units`, default true), `employee_status_id`, `job_status_id`, `file_status` (default active), `contract_ends_within_days`, `overdue_cycle`, `completeness_below`, `identity_locked`, `has_pending`, `sort` (`name`, `completeness`, `contract_ends_on`, `created_at`). Row: numbers, name, unit path, statuses, contract end and days left, completeness, missing count, overdue cycles, pending count |
+| POST | `/employees` | `employees.create` | `values` (field => value), `note`. 201 with the change set (pending, or applied for a reviewer) |
+| GET | `/employees/{id}` | `employees.view` | `identity` (locked, when, by whom), `fields` (each: label, section, cycle, type, identity, `locked`, `value`, `display`, `pending` [value, display, author, time, identity]), `computed` (full name, age, service years, contract days left, unit paths), `completeness`, `missing_fields` by cycle, `warnings`, `reviews` (per cycle: period, last confirmation, due date, overdue, current period done), `pending_change_sets` |
+| PATCH | `/employees/{id}` | `employees.update` | `values`, `note`. 201 with the change set |
+| POST | `/employees/{id}/reviews` | `employees.update` | `cycle` (monthly, quarterly, semi_annual, annual), `values` (that cycle's fields, optional), `note`. 201 |
+| POST | `/employees/{id}/identity/lock` | `identity.review` | Confirm and lock the identity (needs the three names, no identity change waiting); never undone |
+| GET | `/employees/{id}/reviews` | `employees.view` | The four cycles and every confirmation |
+| GET | `/employees/{id}/history` | `employees.view` | Approved changes newest first; `field` for one field. Old and new value with display, kind, cycle, period, author, approver, time, self-approved |
+| GET | `/employee-changes` | `employees.view` | The queue: `status` (default pending, oldest first), `kind`, `employee_id`, `mine`, `needs_identity_review`. Each set with its items (approved and proposed value, display, identity) and `can_decide` |
+| GET | `/employee-changes/{id}` | `employees.view` | One set |
+| POST | `/employee-changes/{id}/approve` | `entries.review` | `note` (optional). Identity sets need `identity.review`; not one's own |
+| POST | `/employee-changes/{id}/reject` | `entries.review` | `note` required |
+| POST | `/employee-changes/{id}/withdraw` | the author | Take one's own pending set back |
+
+### 10.5 Audit events
+
+| Event | Label | Context |
+| ----- | ----- | ------- |
+| `employees.change_submitted` | إرسال إضافة أو تعديل لملف موظف | kind, cycle, period, fields, needs identity review, applied at once |
+| `employees.change_approved` | اعتماد إضافة أو تعديل لملف موظف | self-approved or not |
+| `employees.change_rejected` | ردّ إضافة أو تعديل لملف موظف | the reason |
+| `employees.change_withdrawn` | سحب إضافة أو تعديل لملف موظف | |
+| `employees.identity_locked` | تثبيت هوية موظف (لا تُعدّل بعدها) | the change set, or the fields locked |
+| `employees.identity_check_failed` | تحقق البصمة: هوية مثبتة تغيّرت خارج النظام | the files, the count checked (no actor: the nightly check) |
+| `employees.field_definition_updated` | تعديل تعريف حقل في دليل الحقول | from, to, files recomputed |
+
+The values themselves are in the change items, not in the audit log.
+
+### 10.6 Scheduled work and the fingerprint
+
+`routes/console.php` (the deployment's cron runs `php artisan schedule:run` every minute):
+
+| Command | When (Damascus) | Does |
+| ------- | --------------- | ---- |
+| `employees:verify-identity` | 02:30 | Recomputes every locked identity's fingerprint (D-038); a mismatch is a critical log line and an audit event, and the command fails |
+| `model:prune` | 03:00 | Login challenges expired for a day |
+| `sanctum:prune-expired --hours=48` | 03:10 | Tokens expired for two days |
+
+The fingerprint is HMAC-SHA256 of the six identity values with `HR_IDENTITY_HASH_KEY` (`.env`; APP_KEY if unset).
+Generate it once at installation and keep it with the backups: with another key every fingerprint reads as broken.
+
+The application log (`storage/logs/laravel-YYYY-MM-DD.log`, one a day) is never deleted (`LOG_DAILY_DAYS=0`, D-039):
+include `storage/logs` in the backups. A failed login is one `staff_login_failed` line with `reason`, `device_id`,
+`username` (as typed) and `ip`; never the password.
+
+### 10.7 Measuring
+
+`php artisan employees:generate-demo 4000 --years=3` (development only) fills 4,000 files with three years of
+monthly and quarterly confirmations, a change every month and a queue of 200 pending sets, in bulk SQL (about 30
+seconds). The timings are in D-031.
+
+## 11. Testing
 
 `php artisan test` (PostgreSQL database `hr_test`, `RefreshDatabase`, the catalogues seeded through
-`DatabaseSeeder` for every test): **84 tests**. Fixed device keys in `tests/Support/TestDeviceKeys.php` (D-020); helpers in
+`DatabaseSeeder` for every test): **117 tests**. Fixed device keys in `tests/Support/TestDeviceKeys.php` (D-020); helpers in
 `tests/Support/StaffTestHelpers.php` (`staffUser($role)`, `admin()`, `pendingDevice()`, `approvedDevice()`,
 `loginThrough()` (challenge and signed login through the API), `actingAsStaff()`).
 
 | Test file | Covers |
 | --------- | ------ |
-| `Feature/Identity/DeviceLoginTest` | Signed login (token bound to the device, until 00:00 in Damascus, last seen and last login, audit), the token refused after midnight, the username signed as sent and found lowercase, single-use and expired challenges, the same message for every failure (other key, wrong password, unknown user, another user's device, inactive user), challenges for approved devices only, logout of one session, a deactivated user's token refused, every role logs in the same way |
+| `Feature/Identity/DeviceLoginTest` | Signed login (token bound to the device, until 00:00 in Damascus, last seen and last login, audit), the token refused after midnight, the username signed as sent and found lowercase, single-use and expired challenges, the same message for every failure (other key, wrong password, unknown user, another user's device, inactive user), a failed login logged with reason, device, username and address but not the password, challenges for approved devices only, logout of one session, a deactivated user's token refused, every role logs in the same way |
 | `Feature/Identity/DeviceManagementTest` | Registration idempotent by key, key and MAC checks, pending cap, status without the owner, approval after the fingerprint (any case and spacing, audit, once), one approved device per user (API and database), none for the inactive, revocation deletes tokens, list filter, permissions, console approval, mass-assignment guard |
 | `Feature/Identity/AccessManagementTest` | Each role's defaults, the administrator holds everything, the general manager read-only, a roleless user holds nothing, catalogue and roles listed, permissions added and removed (404 when not held), the administrator's role fixed, the general manager's read-only, the seeder keeps the administrator's changes, a role changed and audited, the last user manager kept, only the administrator gives the administrator's role, deactivation (tokens, not oneself, once) and reactivation, a new password signs out and keeps the device, users listed and filtered (Arabic digits), data entry and the general manager do not manage access |
 | `Feature/Identity/StaffUserRegistrationTest` | A user added (normalised username, Arabic digits, hashed password, audit), created inactive with a reason, Arabic messages and field names, unique username and personal number, database CHECKs (username, deactivation) |
 | `Feature/Identity/CreateAdminCommandTest` | `staff:create-admin` with the API's rules, audited `via: console`; weak or mismatched password refused; confirmation when an administrator exists; refused before the roles are seeded |
 | `Feature/Audit/AuditEventApiTest` | Row with actor, category, related ids, address; nothing after a rollback; append-only (update, delete, truncate); category follows the event; newest first with filters (kind, event, related id, actor, Damascus days, bad input); operations only for `audit.view_related`; permission needed; every recorded event has a label and every label is recorded |
 | `Feature/RequestConventionsTest` | Arabic 401, 403, 404 and 429 (with `Retry-After`), Arabic validation messages, all without `\u` escapes; the database session in UTC |
-| `Feature/Settings/LookupListTest` | The 27 lists seeded in order with their system codes; everybody reads, the supervisor and the administrator change; added at the end and audited; duplicates by search key (and per list); rename and move; archive, restore (archived duplicate restored, not added); system items renamed, never archived (API and CHECK); reorder all active items; the seeder keeps the managers' changes and restores a missing code |
+| `Feature/Settings/LookupListTest` | The 27 lists, each in its own table, seeded in order with their system codes; the same word in two lists is two rows; everybody reads, the supervisor and the administrator change; added at the end and audited; duplicates by search key (and per list); rename and move; archive, restore (archived duplicate restored, not added); system items renamed, never archived (API and the table's CHECK); an id of another list or an unknown list is 404; reorder all active items; the seeder keeps the managers' changes and restores a missing code |
 | `Feature/Settings/OrgUnitTest` | Six levels with paths and the seventh refused; sibling names unique, cousins free; archive after the children, restore under an active parent; rename; the database trigger (level, root, archive with children, move); data entry reads only |
 | `Feature/Settings/HolidayAndWorkSettingsTest` | Days with both ends, by year; correct and delete (204); ends before start and longer than a year refused; the workbook's branch settings from the start; changes with their rules, each change audited, the same value recording nothing; only settings managers change |
+| `Feature/Employees/EmployeeReviewFlowTest` | Data entry adds: an empty pending file with the values beside it, out of the lists, approved by the supervisor; the administrator adds at once, the supervisor and the general manager cannot add; a change beside the approved value until approved, then history; the supervisor's update at once and logged; refusal needs a reason, withdrawal is the author's; data entry does not approve, nobody approves their own; a stale set is refused; values checked with Arabic field names (dates, ranges, phone, archived and unknown items, unknown fields, contract order, nothing changed); unique national number in the file and in the queue; names required; the history cannot be rewritten (items, decided sets); the general manager reads only |
+| `Feature/Employees/IdentityLockTest` | A locked identity changed by nobody (every role, three fields); the database refuses it, never unlocks, never touches the fingerprint, other fields stay changeable; an empty identity field filled once by the administrator's approval (fingerprint renewed, intact), then locked; the supervisor's approval does not lock, approving an identity change does; the lock action is the administrator's, once; a change waiting when the identity is locked is refused at approval; the administrator approving a new file locks it; the fingerprint catches a change made around the trigger (`employees:verify-identity` fails, audit event); the fingerprint is keyed and does not reveal the number |
+| `Feature/Employees/CycleReviewTest` | Confirmed once per period, counts when approved (due date, history); without changes and only the cycle's fields; overdue again after the window (and the list filter); the four periods |
+| `Feature/Employees/EmployeeFileTest` | The guide (125 fields, sections, cycles, lists, 67 counted, 10 identity); completeness and missing by cycle follow the definitions (settings managers only); age, service years, contract days left for today in Damascus; the workbook's warnings; list search (spellings, Arabic digits, numbers), unit and sub-units, contract, completeness, pending, sort; a unit with people is not archived; the definitions' flags survive reseeding |
 | `Unit/ArabicTextTest`, `Unit/BusinessDayTest` | Digits, search key; the next Damascus midnight, a day's UTC bounds |
 
 API documentation check: `php artisan scramble:analyze` must report no warnings. Code style: `./vendor/bin/pint`.
@@ -562,13 +715,16 @@ API documentation check: `php artisan scramble:analyze` must report no warnings.
 The whole login was also run over HTTP with `tools/device-client.mjs` against `php artisan serve`: registration,
 console approval, signed login, a call with the token, the audit log.
 
-## 11. Known limitations and pending work
+## 12. Known limitations and pending work
 
 - The employees, their records, documents, views and import come in Steps 3 to 7 (section 2).
-- The supervisor's review is defined as a role and permissions (D-023: reviews anything; reads and updates, adds and
-  deletes nothing); the review itself is built in Steps 3 and 4. Open: OD-11.
-- Performance plan: D-031 (one PostgreSQL server, indexes, history tables, little cache); measured in Step 3.
-- Archiving an organisational unit does not check its employees yet (Step 3).
+- The records (movements, attendance, conduct, debts) and their review come in Step 4; the debts columns of the file
+  with them. The 13 documents (5 of them counted for completeness) in Step 5.
+- A wrong value in a locked identity cannot be corrected in the application, by the owner's decision (D-034): the
+  administrator checks it before approving.
+- Assumed until the owner says otherwise: the current work unit (OD-15), the three names as the minimum of a new
+  file (OD-16).
+- Sensitive fields are stored as given (D-030).
 - Passwords are not checked against known leaks (OD-4).
 - The device key is protected by the Windows user, not by hardware (D-013).
 - Failed logins are in the application log only; the audit table's retention belongs to the deployment.
@@ -576,10 +732,13 @@ console approval, signed login, a call with the token, the audit log.
 - Migrations may still change in place until the first production installation; from then on they are append-only
   (recruitment D-101).
 
-## 12. Changelog
+## 13. Changelog
 
 | Step | Summary |
 | ---- | ------- |
 | 1 | Foundation: Laravel 12 modular monolith on PostgreSQL 16, UTC connection, Damascus business days, Arabic unescaped JSON as a global middleware, Arabic 401/403/404/429 and validation messages (D-001 to D-005, D-011, D-012, D-022). Identity: staff users with one role (data entry, general manager, system administrator) and the whole system's permission catalogue (D-006, D-019); device-bound login with the payload prefix `hr-staff-login-v1`, tokens until 00:00 in Damascus (D-009, D-013, D-014); access and user management with the last-manager and no-escalation rules (D-015); `staff:create-admin`, `staff:approve-device` (D-018). Audit: append-only `audit_events` with related ids and a read API (D-017). Reference device client. 63 tests |
 | 2 | Owner's answers (OD-1, 2, 3, 5, 7): the `supervisor` role with `entries.review` and `settings.manage` (D-023), the desktop app only, sensitive fields stored as given (D-030). Settings: 27 managed lists with search-key duplicates, system codes and archive / restore / reorder (D-024, D-025); the organisational structure as a six-level tree with paths and database guards (D-026); holidays as date ranges (D-027); the branch settings as one row with the four review windows (D-028); the workbook's sample structure and holidays in local only (D-029). 84 tests |
 | 2.1 | Owner's answers of 23 Nov: the supervisor reviews anything, the file shows the old value with the pending change beside it, the supervisor reads and updates without adding or deleting (D-023): `employees.manage` split into `employees.create` / `.update`, `records.manage` into `records.create` / `.update` / `.delete`, with a migration that carries a seeded database over. Job title is a list (OD-10). Performance and history plan (D-031). 84 tests |
+| 2.2 | The managed lists moved from one pair of tables to **one table per list** (27 tables, plain foreign keys, the recruitment system's way; D-024), with shared code (`ListCatalogue`, `ListItem`, `ManagedList`) and the same API; `LookupList` and `LookupItem` removed. The supervisor's own update takes effect at once and is logged (OD-11, D-023). Development continues from the owner's repository. 85 tests |
+| 3 | The employee's file: 125 typed input fields from «دليل الحقول» with 41 database checks, field definitions as data (D-032); every entry a change set, pending beside the approved value, reviewers applying at once, stale sets refused, the approved items as append-only history (D-033); the identity guard: two identity fields per change at most, identity changes approved by `identity.review` only (D-034); completeness and search key stored, age and service computed (D-035); cycle confirmations per period with overdue (D-036); the workbook's warnings (D-037); `fled` and `retired` codes; a unit with people is not archived; `employees:generate-demo` and the measurements (D-031). Also the Step 2.2 leftovers: `LookupList` and `LookupItem` removed, the Step 2.2 documentation. 113 tests |
+| 3.1 | The identity limit replaced by the **identity lock** (owner, 24 Nov): six identity fields (الرقم الذاتي، الرقم الوطني، الاسم، الأب، الأم، العائلة); locked when the administrator approves them; then changed by nobody, enforced by a trigger; empty ones filled once (D-034). The keyed identity fingerprint and its nightly check (D-038). History and logs: the record and the application log kept for good, only changes stored, measured at 55 MB a year for 4,000 files; expired challenges and tokens pruned; a failed login logged with the device, the username and the address (D-039). No correction after the lock (OD-14 answered). 117 tests |

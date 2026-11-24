@@ -37,20 +37,20 @@ final class LoginStaff
         );
 
         if ($consumed === null) {
-            $this->fail('challenge_invalid');
+            $this->fail('challenge_invalid', $deviceId, $username);
         }
 
         // 2. The device is approved and signed the payload built from stored values and the username as sent.
         $device = StaffDevice::query()->find($deviceId);
 
         if ($device === null || ! $device->isApproved()) {
-            $this->fail('device_not_approved');
+            $this->fail('device_not_approved', $deviceId, $username);
         }
 
         $payload = DeviceCrypto::loginPayload($challengeId, $consumed->challenge, $deviceId, $username);
 
         if (! DeviceCrypto::verify($device->public_key, $payload, $signature)) {
-            $this->fail('bad_signature');
+            $this->fail('bad_signature', $deviceId, $username);
         }
 
         // 3. Only then the user, with equal work whether or not they exist.
@@ -58,20 +58,20 @@ final class LoginStaff
 
         if ($user === null) {
             Hash::check($password, self::DUMMY_HASH);
-            $this->fail('unknown_user');
+            $this->fail('unknown_user', $deviceId, $username);
         }
 
         // 4. Password, active, owner of this device.
         if (! Hash::check($password, $user->password)) {
-            $this->fail('wrong_password');
+            $this->fail('wrong_password', $deviceId, $username);
         }
 
         if (! $user->is_active) {
-            $this->fail('inactive_user');
+            $this->fail('inactive_user', $deviceId, $username);
         }
 
         if ($device->staff_user_id !== $user->getKey()) {
-            $this->fail('device_of_another_user');
+            $this->fail('device_of_another_user', $deviceId, $username);
         }
 
         // 5. A token bound to the device, until the business day ends (00:00 in Damascus, D-009).
@@ -90,9 +90,18 @@ final class LoginStaff
         });
     }
 
-    private function fail(string $reason): never
+    /**
+     * The log file keeps every failed login for good (D-039): the reason, the device, the username as typed
+     * and the address. Never the password.
+     */
+    private function fail(string $reason, string $deviceId, string $username): never
     {
-        Log::warning('staff_login_failed', ['reason' => $reason]);
+        Log::warning('staff_login_failed', [
+            'reason' => $reason,
+            'device_id' => $deviceId,
+            'username' => mb_substr($username, 0, 100),
+            'ip' => request()->ip(),
+        ]);
 
         throw ValidationException::withMessages(['username' => __('auth.failed')]);
     }

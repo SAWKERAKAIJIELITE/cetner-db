@@ -11,6 +11,7 @@ return [
     'org_max_depth' => 'The structure has at most :max levels.',
     'org_duplicate' => 'A unit named ":name" exists at the same place.',
     'org_duplicate_archived' => 'A unit named ":name" exists at the same place, archived: restore it instead.',
+    'org_has_employees' => ':count employee(s) work in this unit: move them first.',
     'org_has_active_children' => 'This unit has active sub-units: archive them first.',
     'holiday_ends_before_start' => 'The holiday ends before it starts.',
     'holiday_too_long' => 'A holiday is at most a year long.',

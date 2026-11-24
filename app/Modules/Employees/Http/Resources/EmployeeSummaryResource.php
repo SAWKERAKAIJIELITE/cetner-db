@@ -1,0 +1,50 @@
+<?php
+
+namespace App\Modules\Employees\Http\Resources;
+
+use App\Modules\Employees\Models\Employee;
+use App\Modules\Employees\Support\EmployeeComputed;
+use App\Modules\Employees\Support\ValueLabels;
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+/**
+ * A row of the employees list: who, where, status, contract, completeness, overdue cycles, pending changes.
+ *
+ * @mixin Employee
+ */
+class EmployeeSummaryResource extends JsonResource
+{
+    public static ?ValueLabels $labels = null;
+
+    /** @var array<string, array<string, array{overdue: bool}>> */
+    public static array $reviews = [];
+
+    /** @var array<string, int> */
+    public static array $pending = [];
+
+    public function toArray(Request $request): array
+    {
+        $labels = self::$labels ??= new ValueLabels;
+        $reviews = self::$reviews[$this->id] ?? [];
+
+        return [
+            'id' => $this->id,
+            'file_status' => $this->file_status->value,
+            'personal_number' => $this->personal_number,
+            'national_number' => $this->national_number,
+            'full_name' => $this->fullName(),
+            'identity_locked' => $this->identity_locked_at !== null,
+            'org_unit' => $this->org_unit_id === null ? null : ['id' => $this->org_unit_id, 'path_label' => $labels->unitPath($this->org_unit_id)],
+            'employee_status' => $labels->item('employee_status_id', $this->employee_status_id),
+            'job_status' => $labels->item('job_status_id', $this->job_status_id),
+            'contract_ends_on' => $this->contract_ends_on?->format('Y-m-d'),
+            'contract_days_left' => EmployeeComputed::contractDaysLeft($this->resource),
+            'completeness' => (float) $this->completeness,
+            'missing_count' => array_sum(array_map('count', $this->missing_fields ?? [])),
+            /** @var list<string> */
+            'overdue_cycles' => array_keys(array_filter($reviews, fn ($r) => $r['overdue'])),
+            'pending_changes' => self::$pending[$this->id] ?? 0,
+        ];
+    }
+}

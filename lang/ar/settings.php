@@ -11,6 +11,7 @@ return [
     'org_max_depth' => 'لا يتجاوز الهيكل :max مستويات.',
     'org_duplicate' => 'توجد جهة باسم «:name» في المستوى نفسه.',
     'org_duplicate_archived' => 'توجد جهة باسم «:name» في المستوى نفسه مؤرشفة: استعدها بدل إضافتها.',
+    'org_has_employees' => 'في هذه الجهة :count موظف: انقلهم إلى جهة أخرى أولًا.',
     'org_has_active_children' => 'لهذه الجهة جهات فرعية فعالة: أرشفها أولًا.',
     'holiday_ends_before_start' => 'تاريخ نهاية العطلة قبل تاريخ بدايتها.',
     'holiday_too_long' => 'لا تزيد العطلة على سنة.',

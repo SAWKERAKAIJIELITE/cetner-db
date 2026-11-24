@@ -2,12 +2,15 @@
 
 namespace Tests\Support;
 
+use App\Modules\Employees\Actions\SubmitEmployeeChanges;
+use App\Modules\Employees\Models\Employee;
 use App\Modules\Identity\Enums\DeviceStatus;
 use App\Modules\Identity\Enums\StaffRole;
 use App\Modules\Identity\Models\Role;
 use App\Modules\Identity\Models\StaffDevice;
 use App\Modules\Identity\Models\StaffUser;
 use App\Modules\Identity\Support\DeviceCrypto;
+use App\Modules\Settings\Models\ListItem;
 use Illuminate\Testing\TestResponse;
 use Laravel\Sanctum\Sanctum;
 
@@ -105,5 +108,26 @@ trait StaffTestHelpers
         Sanctum::actingAs($user, ['*'], 'staff');
 
         return $this;
+    }
+
+    /** A list item's id by its label (or code). */
+    protected function itemId(string $list, string $labelOrCode): int
+    {
+        return (int) ListItem::queryFor($list)->where(fn ($q) => $q->where('label', $labelOrCode)->orWhere('code', $labelOrCode))->value('id');
+    }
+
+    private static int $nationalCounter = 0;
+
+    /** An approved (active) file, added by an administrator (applied at once). */
+    protected function employeeFile(array $values = []): Employee
+    {
+        $set = app(SubmitEmployeeChanges::class)->create(array_merge([
+            'first_name' => 'أحمد',
+            'father_name' => 'محمد',
+            'family_name' => 'الخطيب',
+            'national_number' => (string) (10000000000 + ++self::$nationalCounter),
+        ], $values), null, $this->admin());
+
+        return Employee::query()->findOrFail($set->employee_id);
     }
 }

@@ -15,7 +15,11 @@ final class IssueLoginChallenge
         $device = StaffDevice::query()->find($deviceId);
 
         if ($device === null || ! $device->isApproved()) {
-            Log::warning('staff_login_failed', ['reason' => $device === null ? 'challenge_unknown_device' : 'challenge_device_not_approved']);
+            Log::warning('staff_login_failed', [
+                'reason' => $device === null ? 'challenge_unknown_device' : 'challenge_device_not_approved',
+                'device_id' => $deviceId,
+                'ip' => request()->ip(),
+            ]);
 
             throw ValidationException::withMessages(['device_id' => __('auth.failed')]);
         }
