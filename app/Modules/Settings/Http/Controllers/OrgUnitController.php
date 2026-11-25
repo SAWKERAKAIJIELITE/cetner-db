@@ -19,7 +19,7 @@ class OrgUnitController extends Controller
     /** The whole structure, a parent before its children, each with its path. */
     public function index(IncludeArchivedRequest $request): AnonymousResourceCollection
     {
-        return OrgUnitResource::collection(OrgUnitTree::all((bool) $request->validated('include_archived')));
+        return OrgUnitResource::collection(OrgUnitTree::all((bool) $request->validated('include_archived'), withCounts: true));
     }
 
     /** Add a unit under a parent (six levels at most), or at the top. */

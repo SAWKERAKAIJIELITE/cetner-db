@@ -18,6 +18,7 @@ class AuditEventIndexRequest extends FormRequest
             /** Damascus days, both included. */
             'from' => ['nullable', 'date_format:Y-m-d'],
             'to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from'],
+            'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'between:10,200'],
         ];
     }

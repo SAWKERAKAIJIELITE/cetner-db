@@ -53,7 +53,13 @@ final class ReviewStatus
                 $mine = ($periods ?? collect())->get($id.'|'.$cycle->value, collect());
 
                 $result[$id][$cycle->value] = [
+                    'cycle' => $cycle->value,
                     'label' => $cycle->label(),
+                    'cycle_label' => $cycle->label(),
+                    /** Days a review of this cycle stays valid. */
+                    'window' => $window,
+                    /** Days since the last review; null when never reviewed. */
+                    'days_since' => $lastOn === null ? null : (int) CarbonImmutable::parse($lastOn)->diffInDays($today),
                     'period' => $current,
                     'last_reviewed_on' => $lastOn === null ? null : substr((string) $lastOn, 0, 10),
                     'last_period' => $mine->sortByDesc('reviewed_on')->first()?->period,

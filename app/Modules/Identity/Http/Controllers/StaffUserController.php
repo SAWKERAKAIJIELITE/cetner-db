@@ -36,8 +36,13 @@ class StaffUserController extends Controller
             })
             ->when($filters['role'] ?? null, fn ($q, $slug) => $q->whereHas('role', fn ($r) => $r->where('slug', $slug)))
             ->when(array_key_exists('is_active', $filters) && $filters['is_active'] !== null, fn ($q) => $q->where('is_active', (bool) $filters['is_active']))
-            ->orderBy('username')
-            ->paginate((int) ($filters['per_page'] ?? 25));
+            ->orderBy(match ($filters['sort'] ?? 'username') {
+                'created_at' => 'created_at',
+                'last_login_at' => 'last_login_at',
+                default => 'username',
+            }, $filters['direction'] ?? 'asc')
+            ->orderBy('id')
+            ->paginate((int) ($filters['per_page'] ?? 25))->withQueryString();
 
         return StaffUserResource::collection($users);
     }

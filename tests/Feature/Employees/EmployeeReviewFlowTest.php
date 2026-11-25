@@ -15,6 +15,7 @@ class EmployeeReviewFlowTest extends TestCase
     private function newEmployee(array $extra = []): array
     {
         return ['values' => array_merge([
+            'personal_number' => '٧٧١٢٠',
             'first_name' => 'سامر',
             'father_name' => 'خالد',
             'family_name' => 'العلي',
@@ -28,8 +29,8 @@ class EmployeeReviewFlowTest extends TestCase
     {
         $entry = $this->staffUser();
         $response = $this->actingAsStaff($entry)->postJson(self::API.'/employees', $this->newEmployee())->assertCreated()
-            ->assertJsonPath('data.kind.value', 'create')
-            ->assertJsonPath('data.status.value', 'pending')
+            ->assertJsonPath('data.kind', 'create')
+            ->assertJsonPath('data.status', 'pending')
             ->assertJsonPath('data.employee.full_name', 'سامر خالد العلي')
             ->assertJsonPath('data.can_decide', false);
 
@@ -39,7 +40,7 @@ class EmployeeReviewFlowTest extends TestCase
 
         // The file shows nothing approved, the proposed values beside each field.
         $this->getJson(self::API."/employees/{$employee->id}")->assertOk()
-            ->assertJsonPath('data.file_status.value', 'pending')
+            ->assertJsonPath('data.file_status', 'pending')
             ->assertJsonPath('data.fields.national_number.value', null)
             ->assertJsonPath('data.fields.national_number.pending.0.value', '05551234567')
             ->assertJsonPath('data.fields.gender_id.pending.0.display', 'ذكر');
@@ -52,7 +53,7 @@ class EmployeeReviewFlowTest extends TestCase
             ->assertJsonCount(1, 'data')->assertJsonPath('data.0.can_decide', true);
 
         $this->postJson(self::API.'/employee-changes/'.$response->json('data.id').'/approve')->assertOk()
-            ->assertJsonPath('data.status.value', 'approved')
+            ->assertJsonPath('data.status', 'approved')
             ->assertJsonPath('data.self_approved', false)
             ->assertJsonPath('data.reviewed_by.id', $supervisor->id);
 
@@ -67,7 +68,7 @@ class EmployeeReviewFlowTest extends TestCase
     public function test_the_administrator_adds_at_once_and_the_supervisor_cannot_add(): void
     {
         $this->actingAsStaff($this->admin())->postJson(self::API.'/employees', $this->newEmployee())->assertCreated()
-            ->assertJsonPath('data.status.value', 'approved')->assertJsonPath('data.self_approved', true);
+            ->assertJsonPath('data.status', 'approved')->assertJsonPath('data.self_approved', true);
 
         $this->actingAsStaff($this->staffUser(StaffRole::Supervisor))->postJson(self::API.'/employees', $this->newEmployee(['national_number' => '1234567']))->assertForbidden();
         $this->actingAsStaff($this->staffUser(StaffRole::GeneralManager))->postJson(self::API.'/employees', $this->newEmployee(['national_number' => '7654321']))->assertForbidden();
@@ -82,7 +83,7 @@ class EmployeeReviewFlowTest extends TestCase
             'height_cm' => '176',
             'residence_city' => 'حمص',          // unchanged: not kept
             'phone' => '٠٩٩١ ٢٣٤ ٥٦٧',
-        ]])->assertCreated()->assertJsonPath('data.status.value', 'pending')->assertJsonCount(2, 'data.items')
+        ]])->assertCreated()->assertJsonPath('data.status', 'pending')->assertJsonCount(2, 'data.items')
             ->assertJsonPath('data.items.0.old_display', '175.0')
             ->assertJsonPath('data.items.0.new_display', '176.0')
             ->json('data.id');
@@ -110,7 +111,7 @@ class EmployeeReviewFlowTest extends TestCase
         $supervisor = $this->staffUser(StaffRole::Supervisor);
 
         $this->actingAsStaff($supervisor)->patchJson(self::API."/employees/{$employee->id}", ['values' => ['notes' => 'تصحيح من المشرف']])
-            ->assertCreated()->assertJsonPath('data.status.value', 'approved')->assertJsonPath('data.self_approved', true);
+            ->assertCreated()->assertJsonPath('data.status', 'approved')->assertJsonPath('data.self_approved', true);
 
         $this->assertSame('تصحيح من المشرف', $employee->refresh()->notes);
         $this->assertDatabaseHas('audit_events', ['event' => 'employees.change_submitted', 'actor_id' => $supervisor->id]);
@@ -123,14 +124,14 @@ class EmployeeReviewFlowTest extends TestCase
         $created = $this->actingAsStaff($entry)->postJson(self::API.'/employees', $this->newEmployee())->json('data');
         $supervisor = $this->staffUser(StaffRole::Supervisor);
 
-        $this->actingAsStaff($supervisor)->postJson(self::API."/employee-changes/{$created['id']}/reject")->assertUnprocessable()->assertJsonValidationErrors('note');
-        $this->postJson(self::API."/employee-changes/{$created['id']}/reject", ['note' => 'الرقم الوطني غير مقروء'])->assertOk()
-            ->assertJsonPath('data.status.value', 'rejected');
+        $this->actingAsStaff($supervisor)->postJson(self::API."/employee-changes/{$created['id']}/reject")->assertUnprocessable()->assertJsonValidationErrors('reason');
+        $this->postJson(self::API."/employee-changes/{$created['id']}/reject", ['reason' => 'الرقم الوطني غير مقروء'])->assertOk()
+            ->assertJsonPath('data.status', 'rejected');
         $this->assertSame('rejected', Employee::query()->find($created['employee']['id'])->file_status->value);
 
         $second = $this->actingAsStaff($entry)->postJson(self::API.'/employees', $this->newEmployee())->json('data');
         $this->actingAsStaff($this->staffUser())->postJson(self::API."/employee-changes/{$second['id']}/withdraw")->assertForbidden();
-        $this->actingAsStaff($entry)->postJson(self::API."/employee-changes/{$second['id']}/withdraw")->assertOk()->assertJsonPath('data.status.value', 'withdrawn');
+        $this->actingAsStaff($entry)->postJson(self::API."/employee-changes/{$second['id']}/withdraw")->assertOk()->assertJsonPath('data.status', 'withdrawn');
         $this->assertSame('withdrawn', Employee::query()->find($second['employee']['id'])->file_status->value);
 
         $this->actingAsStaff($supervisor)->postJson(self::API."/employee-changes/{$second['id']}/approve")->assertUnprocessable();
@@ -148,7 +149,7 @@ class EmployeeReviewFlowTest extends TestCase
         // A supervisor's identity change waits; that supervisor cannot approve it.
         $supervisor = $this->staffUser(StaffRole::Supervisor);
         $own = $this->actingAsStaff($supervisor)->patchJson(self::API."/employees/{$employee->id}", ['values' => ['mother_name' => 'فاطمة']])
-            ->assertJsonPath('data.status.value', 'pending')->json('data.id');
+            ->assertJsonPath('data.status', 'pending')->json('data.id');
         $this->postJson(self::API."/employee-changes/{$own}/approve")->assertForbidden()->assertExactJson(['message' => __('employees.own_change')]);
     }
 

@@ -55,12 +55,17 @@ class RecordResource extends JsonResource
                 'org_unit' => $employeeLabels->unitPath($employee?->org_unit_id),
                 'job_title' => $employeeLabels->item('job_title_id', $employee?->job_title_id)['label'] ?? null,
             ],
+            /** approved («معتمد») or pending («قيد التدقيق»: an addition waiting for review, counted nowhere yet). */
+            'review_status' => $pending = ($this->getAttribute('review_status') ?? 'approved'),
+            'review_status_label' => $pending === 'pending' ? 'قيد التدقيق' : 'معتمد',
+            /** The submission a waiting addition is in. */
+            'change_set_id' => $this->getAttribute('change_set_id'),
             'fields' => $fields,
             'computed' => RecordComputed::of($this->resource),
             'deleted' => $this->isDeleted(),
             'deleted_at' => $this->deleted_at?->toIso8601String(),
-            'created_by' => new StaffUserSummaryResource($this->whenLoaded('creator')),
-            'approved_by' => new StaffUserSummaryResource($this->whenLoaded('approver')),
+            'created_by' => $this->creator ? new StaffUserSummaryResource($this->creator) : null,
+            'approved_by' => $this->approver ? new StaffUserSummaryResource($this->approver) : null,
             'created_at' => $this->created_at->toIso8601String(),
             'updated_at' => $this->updated_at->toIso8601String(),
             /** Changes sent for this record and not decided yet: the approved value stays until one is approved. */

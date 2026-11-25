@@ -26,9 +26,10 @@ class ChangeSetController extends Controller
             ->when($f['employee_id'] ?? null, fn ($q, $id) => $q->where('employee_id', $id))
             ->when(! empty($f['mine']), fn ($q) => $q->where('submitted_by', $request->user()->id))
             ->when(isset($f['needs_identity_review']), fn ($q) => $q->where('needs_identity_review', (bool) $f['needs_identity_review']))
-            ->when($status === 'pending', fn ($q) => $q->orderBy('submitted_at'), fn ($q) => $q->orderByDesc('reviewed_at'))
+            // The queue oldest first; decided sets newest decided first; or as asked.
+            ->orderBy($f['sort'] ?? ($status === 'pending' ? 'submitted_at' : 'reviewed_at'), $f['direction'] ?? ($status === 'pending' ? 'asc' : 'desc'))
             ->orderBy('id')
-            ->paginate((int) ($f['per_page'] ?? 25));
+            ->paginate((int) ($f['per_page'] ?? 25))->withQueryString();
 
         return ChangeSetResource::collection($sets);
     }
@@ -42,13 +43,13 @@ class ChangeSetController extends Controller
     /** Approve: the values are written (refused if a value changed since). Not one's own; identity needs `identity.review`. */
     public function approve(DecisionRequest $request, EmployeeChangeSet $set, DecideChangeSet $action): ChangeSetResource
     {
-        return new ChangeSetResource($action->approve($set, $request->user(), $request->validated('note'))->load(['items', 'submitter', 'reviewer', 'employee']));
+        return new ChangeSetResource($action->approve($set, $request->user(), $request->note())->load(['items', 'submitter', 'reviewer', 'employee']));
     }
 
     /** Refuse with a reason: it goes back to its author. */
     public function reject(DecisionRequest $request, EmployeeChangeSet $set, DecideChangeSet $action): ChangeSetResource
     {
-        return new ChangeSetResource($action->reject($set, $request->user(), $request->validated('note'))->load(['items', 'submitter', 'reviewer', 'employee']));
+        return new ChangeSetResource($action->reject($set, $request->user(), $request->note())->load(['items', 'submitter', 'reviewer', 'employee']));
     }
 
     /** Take back one's own pending submission. */

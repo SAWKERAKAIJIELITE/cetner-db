@@ -26,8 +26,10 @@ class RecordChangeSetResource extends JsonResource
 
         return [
             'id' => $this->id,
-            'record_type' => ['value' => $this->record_type->value, 'label' => $this->record_type->label()],
-            'status' => ['value' => $this->status->value, 'label' => $this->status->label()],
+            'record_type' => $this->record_type->value,
+            'record_type_label' => $this->record_type->label(),
+            'status' => $this->status->value,
+            'status_label' => $this->status->label(),
             'items_count' => $this->items_count,
             'note' => $this->note,
             'submitted_by' => new StaffUserSummaryResource($this->submitter),
@@ -42,7 +44,9 @@ class RecordChangeSetResource extends JsonResource
         ];
     }
 
-    /** @return list<array<string, mixed>> */
+    /**
+     * @return list<array{position: int, action: string, action_label: string, record_id: string, employee: array{id: string, personal_number: ?string, full_name: ?string}, fields: list<array{field: string, label: string, old_value: string|int|float|null, old_display: ?string, new_value: string|int|float|null, new_display: ?string}>}>
+     */
     private function items(RecordChangeSet $set): array
     {
         $type = $set->record_type;
@@ -54,7 +58,8 @@ class RecordChangeSetResource extends JsonResource
 
             return [
                 'position' => $item->position,
-                'action' => ['value' => $item->action->value, 'label' => $item->action->label()],
+                'action' => $item->action->value,
+                'action_label' => $item->action->label(),
                 'record_id' => $item->record_id,
                 'employee' => [
                     'id' => $item->employee_id,

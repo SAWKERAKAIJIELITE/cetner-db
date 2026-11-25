@@ -26,9 +26,10 @@ class RecordChangeController extends Controller
             ->when($f['record_type'] ?? null, fn ($q, $t) => $q->where('record_type', $t))
             ->when($f['employee_id'] ?? null, fn ($q, $id) => $q->whereIn('id', RecordChangeItem::query()->select('change_set_id')->where('employee_id', $id)))
             ->when(! empty($f['mine']), fn ($q) => $q->where('submitted_by', $request->user()->id))
-            ->when($status === 'pending', fn ($q) => $q->orderBy('submitted_at'), fn ($q) => $q->orderByDesc('reviewed_at'))
+            // The queue oldest first; decided sets newest decided first; or as asked.
+            ->orderBy($f['sort'] ?? ($status === 'pending' ? 'submitted_at' : 'reviewed_at'), $f['direction'] ?? ($status === 'pending' ? 'asc' : 'desc'))
             ->orderBy('id')
-            ->paginate((int) ($f['per_page'] ?? 25));
+            ->paginate((int) ($f['per_page'] ?? 25))->withQueryString();
 
         return RecordChangeSetResource::collection($sets);
     }
@@ -42,13 +43,13 @@ class RecordChangeController extends Controller
     /** Approve it whole: refused if a record changed or was removed since. Not one's own. */
     public function approve(DecisionRequest $request, RecordChangeSet $set, DecideRecordChangeSet $action): RecordChangeSetResource
     {
-        return new RecordChangeSetResource($action->approve($set, $request->user(), $request->validated('note'))->load(['items.employee', 'submitter', 'reviewer']));
+        return new RecordChangeSetResource($action->approve($set, $request->user(), $request->note())->load(['items.employee', 'submitter', 'reviewer']));
     }
 
     /** Refuse it with a reason: it goes back to its author. */
     public function reject(DecisionRequest $request, RecordChangeSet $set, DecideRecordChangeSet $action): RecordChangeSetResource
     {
-        return new RecordChangeSetResource($action->reject($set, $request->user(), $request->validated('note'))->load(['items.employee', 'submitter', 'reviewer']));
+        return new RecordChangeSetResource($action->reject($set, $request->user(), $request->note())->load(['items.employee', 'submitter', 'reviewer']));
     }
 
     /** Take back one's own pending submission. */

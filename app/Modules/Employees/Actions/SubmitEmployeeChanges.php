@@ -28,8 +28,11 @@ use Illuminate\Validation\ValidationException;
  */
 final class SubmitEmployeeChanges
 {
-    /** A new file needs a name to be found by; everything else may come later. */
-    public const REQUIRED_TO_CREATE = ['first_name', 'father_name', 'family_name'];
+    /**
+     * A new file needs «الرقم الذاتي», the workbook's key (every record names the employee by it), and the three
+     * names of «الاسم الثلاثي»; everything else may come later (D-032, Step 4.1).
+     */
+    public const REQUIRED_TO_CREATE = ['personal_number', 'first_name', 'father_name', 'family_name'];
 
     public function __construct(private readonly ApplyChangeSet $apply) {}
 

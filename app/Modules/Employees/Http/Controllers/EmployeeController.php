@@ -14,10 +14,10 @@ use App\Modules\Employees\Http\Requests\SubmitValuesRequest;
 use App\Modules\Employees\Http\Resources\ChangeSetResource;
 use App\Modules\Employees\Http\Resources\EmployeeResource;
 use App\Modules\Employees\Http\Resources\EmployeeSummaryResource;
+use App\Modules\Employees\Http\Resources\HistoryItemResource;
 use App\Modules\Employees\Models\Employee;
 use App\Modules\Employees\Models\EmployeeChangeItem;
 use App\Modules\Employees\Support\EmployeeQuery;
-use App\Modules\Employees\Support\FieldCatalogue;
 use App\Modules\Employees\Support\ReviewStatus;
 use App\Modules\Employees\Support\ValueLabels;
 use App\Modules\Identity\Http\Resources\StaffUserSummaryResource;
@@ -32,7 +32,7 @@ class EmployeeController extends Controller
     /** The files, 25 per page, with filters; active files by default. */
     public function index(EmployeeIndexRequest $request): AnonymousResourceCollection
     {
-        $page = EmployeeQuery::build($request->validated())->paginate((int) ($request->validated('per_page') ?? 25));
+        $page = EmployeeQuery::build($request->validated())->paginate((int) ($request->validated('per_page') ?? 25))->withQueryString();
         $ids = $page->getCollection()->pluck('id')->all();
 
         EmployeeSummaryResource::$labels = new ValueLabels;
@@ -96,7 +96,8 @@ class EmployeeController extends Controller
         return response()->json(['data' => [
             'cycles' => $employee->isActive() ? ReviewStatus::of($employee->id) : [],
             'history' => $all->map(fn ($r) => [
-                'cycle' => ['value' => $r->cycle->value, 'label' => $r->cycle->label()],
+                'cycle' => $r->cycle->value,
+                'cycle_label' => $r->cycle->label(),
                 'period' => $r->period,
                 'reviewed_on' => $r->reviewed_on->format('Y-m-d'),
                 'change_set_id' => $r->change_set_id,
@@ -107,7 +108,7 @@ class EmployeeController extends Controller
     }
 
     /** What changed, field by field, newest first: the approved changes only (D-033). `field` for one field. */
-    public function history(HistoryRequest $request, Employee $employee): JsonResponse
+    public function history(HistoryRequest $request, Employee $employee): AnonymousResourceCollection
     {
         $page = EmployeeChangeItem::query()
             ->join('employee_change_sets as s', 's.id', '=', 'employee_change_items.change_set_id')
@@ -117,29 +118,17 @@ class EmployeeController extends Controller
             ->orderByDesc('s.reviewed_at')->orderByDesc('employee_change_items.id')
             ->select('employee_change_items.*')
             ->with('changeSet.submitter', 'changeSet.reviewer')
-            ->paginate((int) ($request->validated('per_page') ?? 50));
+            ->paginate((int) ($request->validated('per_page') ?? 50))->withQueryString();
 
         $labels = new ValueLabels;
 
-        return response()->json([
-            'data' => $page->getCollection()->map(fn (EmployeeChangeItem $item) => [
-                'field' => $item->field,
-                'label' => FieldCatalogue::get($item->field)['label'],
-                'old_value' => $item->old_value,
-                'old_display' => $labels->display($item->field, $item->old_value),
-                'new_value' => $item->new_value,
-                'new_display' => $labels->display($item->field, $item->new_value),
-                'change_set_id' => $item->change_set_id,
-                'kind' => $item->changeSet->kind->value,
-                'cycle' => $item->changeSet->cycle?->value,
-                'period' => $item->changeSet->period,
-                'submitted_by' => new StaffUserSummaryResource($item->changeSet->submitter),
-                'submitted_at' => $item->changeSet->submitted_at->toIso8601String(),
-                'approved_by' => new StaffUserSummaryResource($item->changeSet->reviewer),
-                'approved_at' => $item->changeSet->reviewed_at->toIso8601String(),
-                'self_approved' => $item->changeSet->self_approved,
-            ])->values(),
-            'meta' => ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'per_page' => $page->perPage(), 'total' => $page->total()],
-        ]);
+        foreach ($page->getCollection() as $item) {
+            $labels->add($item->field, $item->old_value);
+            $labels->add($item->field, $item->new_value);
+        }
+
+        HistoryItemResource::$labels = $labels;
+
+        return HistoryItemResource::collection($page);
     }
 }

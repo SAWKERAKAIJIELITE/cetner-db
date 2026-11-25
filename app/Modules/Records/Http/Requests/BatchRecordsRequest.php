@@ -17,7 +17,9 @@ class BatchRecordsRequest extends FormRequest
             /** create or update */
             'changes.*.action' => ['required', 'in:create,update'],
             /** For create: whose record. */
-            'changes.*.employee_id' => ['required_if:changes.*.action,create', 'nullable', 'uuid'],
+            'changes.*.employee_id' => ['nullable', 'uuid'],
+            /** For create: «الرقم الذاتي», instead of employee_id. */
+            'changes.*.personal_number' => ['nullable', 'string', 'max:20'],
             /** For update: which record. */
             'changes.*.record_id' => ['required_if:changes.*.action,update', 'nullable', 'uuid'],
             'changes.*.values' => ['required', 'array'],

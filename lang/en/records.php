@@ -23,4 +23,13 @@ return [
     'own_change' => 'Nobody approves what they sent themselves.',
     'withdraw_own_only' => 'Only its author withdraws a submission.',
     'not_pending' => 'This submission is :status: no new decision is taken on it.',
+    'period_both_ends' => 'The start and end dates are entered together.',
+    'period_too_long' => 'The period is under 400 days.',
+    'leave_needs_period' => 'A leave is entered with its period (start and end): its days are counted from it.',
+    'debt_under_payments' => 'The debt cannot be less than what was paid of it (:paid).',
+    'payment_not_corrected' => 'A payment is not corrected: remove it with the reason and enter it again.',
+    'debt_unknown' => 'The debt does not exist, was removed, or is another employee\'s.',
+    'payment_over_remaining' => 'The payment is more than what is left of the debt (:remaining).',
+    'payments_over_debt' => 'The payments exceed what is left of the debt: the submission is refused.',
+    'debt_has_payments' => 'The debt has payments: remove them first.',
 ];

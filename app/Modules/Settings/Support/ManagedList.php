@@ -56,6 +56,9 @@ final class ManagedList
             ->orderBy('id')
             ->get();
 
+        $usage = ListUsage::counts($this->key);
+        $this->items->each(fn ($item) => $item->setAttribute('usage_count', $usage[$item->id] ?? 0));
+
         return $this;
     }
 }

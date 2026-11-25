@@ -21,13 +21,7 @@ final class EmployeeQuery
         $query = Employee::query()->where('file_status', $f['file_status'] ?? 'active');
 
         if (($q = trim((string) ($f['q'] ?? ''))) !== '') {
-            $digits = ArabicText::digitsToAscii($q);
-
-            if (preg_match('/^[0-9]+$/', $digits) === 1) {
-                $query->where(fn ($w) => $w->where('personal_number', 'like', $digits.'%')->orWhere('national_number', 'like', $digits.'%'));
-            } else {
-                $query->where('search_name', 'ilike', '%'.addcslashes(ArabicText::searchKey($q), '%_\\').'%');
-            }
+            self::search($query, $q);
         }
 
         if (! empty($f['org_unit_id'])) {
@@ -35,7 +29,7 @@ final class EmployeeQuery
             $query->whereIn('org_unit_id', $ids);
         }
 
-        foreach (['employee_status_id', 'job_status_id'] as $field) {
+        foreach (['employee_status_id', 'job_status_id', 'work_schedule_id', 'position_level_id', 'org_stage_id', 'gender_id'] as $field) {
             if (! empty($f[$field])) {
                 $query->where($field, (int) $f[$field]);
             }
@@ -75,12 +69,30 @@ final class EmployeeQuery
                 ->where('employee_change_sets.status', ChangeSetStatus::Pending->value));
         }
 
-        return match ($f['sort'] ?? 'name') {
-            'completeness' => $query->orderBy('completeness')->orderBy('id'),
-            'contract_ends_on' => $query->orderByRaw('contract_ends_on ASC NULLS LAST')->orderBy('id'),
-            'created_at' => $query->orderByDesc('created_at')->orderBy('id'),
-            default => $query->orderByRaw('search_name ASC NULLS LAST')->orderBy('id'),
+        $sort = $f['sort'] ?? 'name';
+        $direction = ($f['direction'] ?? ($sort === 'created_at' ? 'desc' : 'asc')) === 'desc' ? 'DESC' : 'ASC';
+        $column = match ($sort) {
+            'personal_number', 'completeness', 'contract_ends_on', 'created_at' => $sort,
+            default => 'search_name',
         };
+
+        return $query->orderByRaw("{$column} {$direction} NULLS LAST")->orderBy('id');
+    }
+
+    /**
+     * A name (any spelling) or the start of a personal or national number (any digits), on a query of `employees`.
+     *
+     * @param  Builder|\Illuminate\Database\Query\Builder  $query
+     */
+    public static function search($query, string $text): void
+    {
+        $digits = ArabicText::digitsToAscii(trim($text));
+
+        if (preg_match('/^[0-9]+$/', $digits) === 1) {
+            $query->where(fn ($w) => $w->where('employees.personal_number', 'like', $digits.'%')->orWhere('employees.national_number', 'like', $digits.'%'));
+        } else {
+            $query->where('employees.search_name', 'ilike', '%'.addcslashes(ArabicText::searchKey($text), '%_\\').'%');
+        }
     }
 
     /** @return list<int> a unit and every unit under it */

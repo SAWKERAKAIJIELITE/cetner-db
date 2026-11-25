@@ -20,7 +20,11 @@ class ChangeSetIndexRequest extends FormRequest
             'mine' => ['nullable', 'boolean'],
             /** Only those that change who the person is (the administrator's to approve). */
             'needs_identity_review' => ['nullable', 'boolean'],
-            'per_page' => ['nullable', 'integer', 'between:10,100'],
+            /** submitted_at (the queue's default, oldest first) or reviewed_at (decided sets' default, newest first). */
+            'sort' => ['nullable', 'in:submitted_at,reviewed_at'],
+            'direction' => ['nullable', 'in:asc,desc'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'between:5,100'],
         ];
     }
 }

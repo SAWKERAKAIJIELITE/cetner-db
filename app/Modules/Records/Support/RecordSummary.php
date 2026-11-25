@@ -7,14 +7,13 @@ use App\Modules\Records\Models\EmployeeAttendance;
 use App\Modules\Records\Models\EmployeeConductRecord;
 use App\Modules\Records\Models\EmployeeMovement;
 use App\Modules\Settings\Models\WorkSettings;
-use App\Support\ArabicText;
 use App\Support\BusinessDay;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
  * «مؤشرات السنة المختارة (من السجلات)» of «تقرير الحالة الوظيفية» (D-044), computed when read with the workbook's
- * rules: a leave is a movement whose type begins with «إجازة»; courses, rewards and deductions, complaints,
+ * rules: a leave is a movement of a leave type (LeaveTypes), and only internal and external leave reduce the balance; courses, rewards and deductions, complaints,
  * warnings, punishments and thanks are found by their list items' codes, so renaming them changes nothing. The
  * debts are all of them, not the year's. A fixed number of queries.
  */
@@ -24,19 +23,18 @@ final class RecordSummary
     public static function of(string $employeeId, int $year): array
     {
         [$from, $to] = [sprintf('%04d-01-01', $year), sprintf('%04d-12-31', $year)];
-
-        // «إجازة», «اجازة», «إجازه»: one word (the lists' search key).
-        $leave = ArabicText::searchKey('إجازة').'%';
+        $leave = LeaveTypes::sql('t');
 
         $m = DB::table('employee_movements AS m')->join('movement_types AS t', 't.id', '=', 'm.movement_type_id')
             ->where('m.employee_id', $employeeId)->whereNull('m.deleted_at')->whereBetween('m.occurred_on', [$from, $to])
-            ->selectRaw(<<<'SQL'
-                count(*) FILTER (WHERE t.search_key LIKE ?) AS leaves,
-                coalesce(sum(m.days) FILTER (WHERE t.search_key LIKE ?), 0) AS leave_days,
+            ->selectRaw(<<<SQL
+                count(*) FILTER (WHERE {$leave}) AS leaves,
+                coalesce(sum(m.days) FILTER (WHERE {$leave}), 0) AS leave_days,
+                coalesce(sum(m.days) FILTER (WHERE t.code IN ('leave_internal', 'leave_external')), 0) AS balance_days,
                 count(*) FILTER (WHERE t.code = 'course') AS courses,
                 coalesce(sum(m.amount) FILTER (WHERE t.code = 'reward'), 0) AS rewards,
                 coalesce(sum(m.amount) FILTER (WHERE t.code = 'deduction'), 0) AS deductions
-                SQL, [$leave, $leave])->first();
+                SQL, [...LeaveTypes::sqlBindings(), ...LeaveTypes::sqlBindings()])->first();
 
         $a = DB::table('employee_attendance')->where('employee_id', $employeeId)->whereNull('deleted_at')->where('year', $year)
             ->selectRaw('coalesce(sum(planned_days), 0) AS planned, coalesce(sum(attended_days), 0) AS attended, coalesce(sum(absent_days), 0) AS absent, count(*) AS months')
@@ -66,8 +64,8 @@ final class RecordSummary
             'leaves' => [
                 'count' => (int) $m->leaves,
                 'days' => (int) $m->leave_days,
-                /** The year's allowance («رصيد الإجازات») less the leave days, every kind of leave counted, as in the workbook. */
-                'balance' => WorkSettings::current()->annual_leave_days - (int) $m->leave_days,
+                /** The year's allowance («رصيد الإجازات») less the internal and external leave days (owner, 25 Nov: not sick or emergency leave). */
+                'balance' => WorkSettings::current()->annual_leave_days - (int) $m->balance_days,
             ],
             'courses' => (int) $m->courses,
             'rewards_total' => $money($m->rewards),
@@ -75,9 +73,9 @@ final class RecordSummary
             'attendance' => [
                 'months' => (int) $a->months,
                 'planned_days' => (int) $a->planned,
-                'attended_days' => (int) $a->attended,
-                'absent_days' => (int) $a->absent,
-                'absence_rate' => RecordComputed::absenceRate((int) $a->planned, (int) $a->absent),
+                'attended_days' => (float) $a->attended,
+                'absent_days' => (float) $a->absent,
+                'absence_rate' => RecordComputed::absenceRate((float) $a->planned, (float) $a->absent),
             ],
             'conduct' => [
                 'complaints' => (int) $c->complaints,

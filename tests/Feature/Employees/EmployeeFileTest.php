@@ -22,10 +22,11 @@ class EmployeeFileTest extends TestCase
 
         $this->assertSame('personal', 'personal'); // sections are Arabic labels:
         $this->assertSame('البيانات الشخصية', $fields['national_number']['section']);
-        $this->assertSame('once', $fields['national_number']['cycle']['value']);
+        $this->assertSame('once', $fields['national_number']['cycle']);
+        $this->assertSame('لمرة واحدة', $fields['national_number']['cycle_label']);
         $this->assertTrue($fields['national_number']['identity']);
         $this->assertSame('blood_type', $fields['blood_type_id']['list']);
-        $this->assertSame('semi_annual', $fields['contract_ends_on']['cycle']['value']);
+        $this->assertSame('semi_annual', $fields['contract_ends_on']['cycle']);
         $this->assertSame(67, $fields->where('counts_for_completeness', true)->count());
         $this->assertSame(['personal_number', 'first_name', 'father_name', 'family_name', 'mother_name', 'national_number'], $fields->where('identity', true)->keys()->all());
         $this->assertFalse($fields['birth_date']['identity']);
@@ -33,9 +34,25 @@ class EmployeeFileTest extends TestCase
 
     public function test_completeness_and_missing_fields_by_cycle_follow_the_definitions(): void
     {
+        // Five counted fields filled (the number and four names) of 68: the 67 definitions, the unit counting as
+        // the workbook's levels 1 and 2 (73 with the five documents of Step 5).
         $employee = $this->employeeFile();
-        $this->assertSame(round(4 * 100 / 67, 2), (float) $employee->completeness);
+        $this->assertSame(round(5 * 100 / 68, 2), (float) $employee->completeness);
         $this->assertContains('phone', $employee->missing_fields['quarterly']);
+        $this->assertContains('org_unit_level_2', $employee->missing_fields['monthly']);
+
+        $this->actingAsStaff($this->staffUser())->getJson(self::API."/employees/{$employee->id}")
+            ->assertJsonPath('data.completeness_filled', 5)->assertJsonPath('data.completeness_counted', 68)
+            ->assertJsonFragment(['key' => 'org_unit_level_2', 'label' => 'المستوى التنظيمي الثاني']);
+
+        // A unit at level 2 fills both levels.
+        $this->actingAsStaff($this->admin());
+        $top = $this->postJson(self::API.'/settings/org-units', ['name' => 'القيادة'])->json('data.id');
+        $second = $this->postJson(self::API.'/settings/org-units', ['name' => 'مديرية', 'parent_id' => $top])->json('data.id');
+        $placed = $this->employeeFile(['org_unit_id' => $second]);
+        $this->assertSame(round(7 * 100 / 68, 2), (float) $placed->completeness);
+        $atTop = $this->employeeFile(['org_unit_id' => $top]);
+        $this->assertSame(round(6 * 100 / 68, 2), (float) $atTop->completeness);
 
         $this->actingAsStaff($this->staffUser())->putJson(self::API.'/field-definitions/phone', ['counts_for_completeness' => false])->assertForbidden();
 
@@ -43,7 +60,7 @@ class EmployeeFileTest extends TestCase
             ->assertJsonPath('data.counts_for_completeness', false);
 
         $employee->refresh();
-        $this->assertSame(round(4 * 100 / 66, 2), (float) $employee->completeness);
+        $this->assertSame(round(5 * 100 / 67, 2), (float) $employee->completeness);
         $this->assertNotContains('phone', $employee->missing_fields['quarterly']);
 
         $this->putJson(self::API.'/field-definitions/residence_city', ['cycle' => 'quarterly'])->assertOk();
@@ -129,5 +146,38 @@ class EmployeeFileTest extends TestCase
         $phone = FieldDefinition::query()->findOrFail('phone');
         $this->assertFalse($phone->counts_for_completeness);
         $this->assertSame('annual', $phone->cycle->value);
+    }
+
+    public function test_the_register_filters_and_sorts_as_the_design_does_and_a_file_needs_its_number(): void
+    {
+        $morning = $this->itemId('work_schedule', 'إداري');
+        $this->employeeFile(['first_name' => 'باسل', 'personal_number' => '300', 'work_schedule_id' => $morning, 'gender_id' => $this->itemId('gender', 'male')]);
+        $this->employeeFile(['first_name' => 'أمل', 'personal_number' => '100']);
+        $this->employeeFile(['first_name' => 'جود', 'personal_number' => '200']);
+
+        $this->actingAsStaff($this->staffUser());
+        $this->getJson(self::API."/employees?work_schedule_id={$morning}")->assertJsonCount(1, 'data');
+        $this->getJson(self::API.'/employees?gender_id='.$this->itemId('gender', 'male'))->assertJsonCount(1, 'data');
+        $this->getJson(self::API.'/employees?sort=personal_number&direction=desc&per_page=5')
+            ->assertJsonPath('data.0.personal_number', '300')->assertJsonPath('meta.per_page', 5)
+            ->assertJsonPath('links.first', fn ($url) => str_contains($url, 'sort=personal_number'));
+
+        // «الرقم الذاتي» is the workbook's key: a new file needs it with the three names.
+        $this->postJson(self::API.'/employees', ['values' => ['first_name' => 'ليلى', 'father_name' => 'سعيد', 'family_name' => 'الحسن']])
+            ->assertUnprocessable()->assertJsonValidationErrors('values.personal_number');
+    }
+
+    public function test_the_file_shows_where_its_service_is_counted_from(): void
+    {
+        Carbon::setTestNow('2026-11-25 09:00:00');
+        $employee = $this->employeeFile(['appointment_date' => '2020-03-01', 'contract_signed_on' => '2019-07-15']);
+
+        $this->actingAsStaff($this->staffUser())->getJson(self::API."/employees/{$employee->id}")
+            ->assertJsonPath('data.computed.service_started_on', '2019-07-15')
+            ->assertJsonPath('data.computed.service_ended_on', '2026-11-25')
+            ->assertJsonPath('data.computed.open_debts', 0)
+            ->assertJsonPath('data.reviews.monthly.window', 35)
+            ->assertJsonPath('data.reviews.monthly.days_since', null)
+            ->assertJsonPath('data.reviews.monthly.cycle_label', 'شهري');
     }
 }

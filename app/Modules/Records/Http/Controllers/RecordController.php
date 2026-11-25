@@ -5,7 +5,6 @@ namespace App\Modules\Records\Http\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\Employees\Enums\ChangeSetStatus;
 use App\Modules\Records\Actions\SubmitRecordChanges;
-use App\Modules\Records\Enums\DebtStatus;
 use App\Modules\Records\Enums\RecordAction;
 use App\Modules\Records\Enums\RecordType;
 use App\Modules\Records\Http\Requests\BatchRecordsRequest;
@@ -21,10 +20,9 @@ use App\Modules\Records\Support\RecordCatalogue;
 use App\Modules\Records\Support\RecordChange;
 use App\Modules\Records\Support\RecordLabels;
 use App\Modules\Records\Support\RecordPage;
-use App\Support\BusinessDay;
+use App\Modules\Records\Support\RecordRegister;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Support\Facades\DB;
 
 /**
  * The four records: `{type}` is movements, attendance, conduct or debts. Every entry is a change that waits for a
@@ -38,7 +36,8 @@ class RecordController extends Controller
         $t = RecordType::from($type);
 
         return response()->json(['data' => [
-            'record_type' => ['value' => $t->value, 'label' => $t->label()],
+            'record_type' => $t->value,
+            'record_type_label' => $t->label(),
             'fields' => collect(RecordCatalogue::fields($t))->map(fn (array $f, string $key) => [
                 'key' => $key,
                 'label' => $f['label'],
@@ -52,59 +51,28 @@ class RecordController extends Controller
         ]]);
     }
 
-    /** A kind of record, newest first, with filters; each with the changes waiting for it. */
+    /**
+     * A register, newest first: the approved records and the additions waiting for review («قيد التدقيق»), each
+     * with the corrections waiting for it. Filters stay in the page links.
+     */
     public function index(RecordIndexRequest $request, string $type): AnonymousResourceCollection
     {
         $t = RecordType::from($type);
         $f = $request->validated();
-        $model = $t->model();
-        $table = $t->table();
-        $date = $t === RecordType::Debts ? 'incurred_on' : 'occurred_on';
-        $today = BusinessDay::today()->format('Y-m-d');
 
-        $query = $model::query()
-            ->with(['employee', 'creator', 'approver'])
-            ->when(! empty($f['deleted']), fn ($q) => $q->whereNotNull('deleted_at'), fn ($q) => $q->whereNull('deleted_at'))
-            ->when($f['employee_id'] ?? null, fn ($q, $id) => $q->where('employee_id', $id))
-            ->when($f['personal_number'] ?? null, fn ($q, $n) => $q->whereIn('employee_id', DB::table('employees')->select('id')->where('personal_number', $n)));
-
-        if ($t === RecordType::Attendance) {
-            $query->when($f['year'] ?? null, fn ($q, $y) => $q->where('year', $y))
-                ->when($f['month'] ?? null, fn ($q, $m) => $q->where('month', $m))
-                ->when(isset($f['high_absence']), fn ($q) => $q->whereRaw(
-                    ($f['high_absence'] ? '' : 'NOT ').'(planned_days > 0 AND absent_days::numeric / planned_days >= ?)', [config('hr.high_absence_rate')]
-                ));
-        } else {
-            $query->when($f['year'] ?? null, fn ($q, $y) => $q->whereBetween($date, [sprintf('%04d-01-01', $y), sprintf('%04d-12-31', $y)]))
-                ->when($f['month'] ?? null, fn ($q, $m) => $q->whereRaw("extract(month FROM {$date}) = ?", [$m]));
-        }
-
-        $list = ['movements' => 'movement_type_id', 'conduct' => 'conduct_type_id', 'debts' => 'debt_type_id'][$t->value] ?? null;
-        $query->when($list && isset($f['type_id']), fn ($q) => $q->where($list, $f['type_id']));
-
-        if ($t === RecordType::Debts && isset($f['debt_status'])) {
-            match (DebtStatus::from($f['debt_status'])) {
-                DebtStatus::Paid => $query->where('remaining_amount', '<=', 0),
-                DebtStatus::Overdue => $query->where('remaining_amount', '>', 0)->where('due_on', '<', $today),
-                DebtStatus::Outstanding => $query->where('remaining_amount', '>', 0)->where(fn ($q) => $q->whereNull('due_on')->orWhere('due_on', '>=', $today)),
-            };
-        }
-
-        foreach ($t->order() as $column) {
-            $query->orderByDesc("{$table}.{$column}");
-        }
-
-        $records = $query->orderByDesc("{$table}.created_at")->orderBy("{$table}.id")->paginate((int) ($f['per_page'] ?? 25));
+        $records = RecordRegister::query($t, $f)->with(['employee', 'creator', 'approver'])
+            ->paginate((int) ($f['per_page'] ?? 25))->withQueryString();
         RecordPage::prepare($t, $records->getCollection());
 
         return RecordResource::collection($records);
     }
 
-    /** One record, removed ones too, with the changes waiting for it. */
+    /** One record: approved (removed ones too) or an addition waiting for review. */
     public function show(string $type, string $record): RecordResource
     {
         $t = RecordType::from($type);
-        $model = $this->find($t, $record)->load(['employee', 'creator', 'approver']);
+        $model = RecordRegister::find($t, $record) ?? abort(404);
+        $model->load(['employee', 'creator', 'approver']);
         RecordPage::prepare($t, [$model]);
 
         return new RecordResource($model);
@@ -125,7 +93,8 @@ class RecordController extends Controller
 
         return response()->json(['data' => $items->map(fn (RecordChangeItem $item) => [
             'change_set_id' => $item->change_set_id,
-            'action' => ['value' => $item->action->value, 'label' => $item->action->label()],
+            'action' => $item->action->value,
+            'action_label' => $item->action->label(),
             'note' => $item->changeSet->note,
             'submitted_by' => $item->changeSet->submitter?->fullName(),
             'submitted_at' => $item->changeSet->submitted_at->toIso8601String(),
@@ -145,7 +114,7 @@ class RecordController extends Controller
     public function store(StoreRecordRequest $request, string $type, SubmitRecordChanges $action): JsonResponse
     {
         $set = $action->handle(RecordType::from($type), [
-            new RecordChange(RecordAction::Create, $request->validated('employee_id'), null, $request->validated('values')),
+            new RecordChange(RecordAction::Create, $request->validated('employee_id'), null, $request->validated('values'), 'values', $request->validated('personal_number')),
         ], $request->validated('note'), $request->user());
 
         return $this->submitted($set);
@@ -168,7 +137,7 @@ class RecordController extends Controller
         $t = RecordType::from($type);
         $this->find($t, $record);
 
-        $set = $action->handle($t, [new RecordChange(RecordAction::Delete, null, $record, [])], $request->validated('note'), $request->user());
+        $set = $action->handle($t, [new RecordChange(RecordAction::Delete, null, $record, [])], $request->validated('reason'), $request->user());
 
         return $this->submitted($set);
     }
@@ -182,11 +151,13 @@ class RecordController extends Controller
             $c['record_id'] ?? null,
             $c['values'],
             "changes.{$i}.values",
+            $c['personal_number'] ?? null,
         ), $request->validated('changes'), array_keys($request->validated('changes')));
 
         return $this->submitted($action->handle(RecordType::from($type), $changes, $request->validated('note'), $request->user()));
     }
 
+    /** An approved record (removed ones too), for a change. */
     private function find(RecordType $type, string $id): EmployeeRecord
     {
         return $type->model()::query()->findOrFail($id);

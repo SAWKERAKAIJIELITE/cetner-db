@@ -13,7 +13,8 @@ class UpdateWorkSettingsRequest extends FormRequest
     {
         return [
             'branch_name' => ['sometimes', 'string', 'max:150', 'not_regex:/^\s*$/u'],
-            'daily_hours' => ['sometimes', 'numeric', 'decimal:0,2', 'gt:0', 'max:24'],
+            /** Computed from starts_at and ends_at: not sent. */
+            'daily_hours' => ['prohibited'],
             /** HH:MM */
             'starts_at' => ['sometimes', 'date_format:H:i'],
             /** HH:MM, after starts_at */
@@ -26,6 +27,8 @@ class UpdateWorkSettingsRequest extends FormRequest
             'weekly_days_off.*' => ['integer', 'between:1,7', 'distinct'],
             'currency' => ['sometimes', 'string', 'max:20', 'not_regex:/^\s*$/u'],
             'annual_leave_days' => ['sometimes', 'integer', 'between:0,365'],
+            /** Percent: a month of attendance at or above it is flagged («تجاوز الحد المسموح»); 20 by default. */
+            'high_absence_rate' => ['sometimes', 'numeric', 'decimal:0,2', 'gt:0', 'max:100'],
             /** Days a monthly review stays valid; then quarterly ≥ monthly, semi-annual ≥ quarterly, annual ≥ semi-annual. */
             'review_window_monthly' => ['sometimes', 'integer', 'between:1,1000'],
             'review_window_quarterly' => ['sometimes', 'integer', 'between:1,1000'],

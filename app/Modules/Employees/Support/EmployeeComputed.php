@@ -38,6 +38,24 @@ final class EmployeeComputed
         return round($from->diffInDays($to, false) / 365.25, 1);
     }
 
+    /** The date «سنوات الخدمة» counts from: the earliest of assignment, appointment and contract signature. */
+    public static function serviceStartedOn(Employee $employee): ?string
+    {
+        $starts = array_filter([$employee->assignment_date, $employee->appointment_date, $employee->contract_signed_on]);
+
+        return $starts === [] ? null : CarbonImmutable::instance(min($starts))->format('Y-m-d');
+    }
+
+    /** The date it counts to: the discharge date, or today; null when it has no start. */
+    public static function serviceEndedOn(Employee $employee): ?string
+    {
+        if (self::serviceStartedOn($employee) === null) {
+            return null;
+        }
+
+        return ($employee->discharge_date !== null ? CarbonImmutable::instance($employee->discharge_date) : BusinessDay::today())->format('Y-m-d');
+    }
+
     /** «المتبقي على انتهاء العقد (يوم)»: negative once it has ended. */
     public static function contractDaysLeft(Employee $employee): ?int
     {

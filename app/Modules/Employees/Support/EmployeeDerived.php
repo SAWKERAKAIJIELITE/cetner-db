@@ -5,6 +5,7 @@ namespace App\Modules\Employees\Support;
 use App\Modules\Employees\Enums\Cycle;
 use App\Modules\Employees\Models\Employee;
 use App\Support\ArabicText;
+use Illuminate\Support\Facades\DB;
 
 /**
  * What is derived from the approved values and stored with them (D-035), so that lists filter and sort on it:
@@ -49,6 +50,16 @@ final class EmployeeDerived
             } else {
                 $filled++;
             }
+
+            // The workbook counts «المستوى التنظيمي الأول» and «الثاني» apart (73 ✔): one unit is two
+            // counted fields, the second filled when the unit is at level 2 or deeper.
+            if ($key === 'org_unit_id') {
+                if ($value !== null && self::unitLevel((int) $value) >= 2) {
+                    $filled++;
+                } else {
+                    $missing[FieldDefinitions::all()[$key]->cycle->value][] = self::SECOND_LEVEL;
+                }
+            }
         }
 
         // In the cycles' order.
@@ -60,6 +71,28 @@ final class EmployeeDerived
             }
         }
 
-        return [number_format($filled * 100 / count($counted), 2, '.', ''), $ordered];
+        return [number_format($filled * 100 / self::countedTotal(), 2, '.', ''), $ordered];
+    }
+
+    /** The second organisational level, counted apart as in the workbook. */
+    public const SECOND_LEVEL = 'org_unit_level_2';
+
+    /** How many counted fields: the counted definitions, the unit counting twice (the workbook's 73 in Step 5). */
+    public static function countedTotal(): int
+    {
+        $counted = FieldDefinitions::counted();
+
+        return count($counted) + (in_array('org_unit_id', $counted, true) ? 1 : 0);
+    }
+
+    /** A missing field's label, the second level's too. */
+    public static function label(string $key): string
+    {
+        return $key === self::SECOND_LEVEL ? 'المستوى التنظيمي الثاني' : FieldDefinitions::all()[$key]->label_ar;
+    }
+
+    private static function unitLevel(int $id): int
+    {
+        return (int) DB::table('org_units')->where('id', $id)->value('level');
     }
 }

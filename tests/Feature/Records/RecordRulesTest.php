@@ -18,12 +18,14 @@ class RecordRulesTest extends TestCase
         $this->actingAsStaff($this->staffUser());
 
         $this->getJson(self::API.'/records/movements/fields')->assertOk()
-            ->assertJsonPath('data.record_type.label', 'سجل الحركات')
-            ->assertJsonCount(12, 'data.fields')
+            ->assertJsonPath('data.record_type_label', 'سجل الحركات')
+            ->assertJsonCount(11, 'data.fields')
             ->assertJsonFragment(['key' => 'movement_type_id', 'label' => 'نوع الحركة', 'type' => 'list', 'list' => 'movement_type', 'required' => true, 'fixed' => false, 'max' => null]);
         $this->getJson(self::API.'/records/attendance/fields')->assertJsonFragment(['key' => 'month', 'fixed' => true]);
         $this->getJson(self::API.'/records/conduct/fields')->assertJsonCount(10, 'data.fields');
         $this->getJson(self::API.'/records/debts/fields')->assertJsonCount(9, 'data.fields');
+        $this->getJson(self::API.'/records/payments/fields')->assertJsonCount(5, 'data.fields')
+            ->assertJsonFragment(['key' => 'debt_id', 'type' => 'debt', 'required' => true, 'fixed' => true]);
         $this->getJson(self::API.'/records/salaries/fields')->assertNotFound();
     }
 
@@ -35,37 +37,49 @@ class RecordRulesTest extends TestCase
         $this->postJson(self::API.'/records/movements', ['employee_id' => $employee->id, 'values' => ['description' => 'x']])->assertUnprocessable()
             ->assertJsonValidationErrors(['values.occurred_on', 'values.movement_type_id']);
         $this->postJson(self::API.'/records/movements', ['employee_id' => $employee->id, 'values' => [
-            'occurred_on' => '10/03/2026', 'movement_type_id' => 99999, 'amount' => -5, 'days' => 'خمسة', 'salary' => 1,
-        ]])->assertUnprocessable()->assertJsonPath('errors.values.0', __('records.unknown_fields', ['fields' => 'salary']));
+            'occurred_on' => '10/03/2026', 'movement_type_id' => 99999, 'amount' => -5, 'days' => 5, 'salary' => 1,
+        ]])->assertUnprocessable()->assertJsonPath('errors.values.0', __('records.unknown_fields', ['fields' => 'days، salary']));
         $this->postJson(self::API.'/records/movements', ['employee_id' => $employee->id, 'values' => [
-            'occurred_on' => '10/03/2026', 'movement_type_id' => 99999, 'amount' => -5, 'days' => 'خمسة',
-        ]])->assertUnprocessable()->assertJsonValidationErrors(['values.occurred_on', 'values.movement_type_id', 'values.amount', 'values.days']);
+            'occurred_on' => '10/03/2026', 'movement_type_id' => 99999, 'amount' => -5, 'starts_on' => 'أمس',
+        ]])->assertUnprocessable()->assertJsonValidationErrors(['values.occurred_on', 'values.movement_type_id', 'values.amount', 'values.starts_on']);
 
         $leave = $this->itemId('movement_type', 'إجازة داخلية');
         $this->postJson(self::API.'/records/movements', ['employee_id' => $employee->id, 'values' => [
             'occurred_on' => '2026-04-01', 'movement_type_id' => $leave, 'starts_on' => '2026-04-10', 'ends_on' => '2026-04-05',
         ]])->assertUnprocessable()->assertJsonValidationErrors(['values.ends_on' => __('records.ends_before_start')]);
+        $this->postJson(self::API.'/records/movements', ['employee_id' => $employee->id, 'values' => [
+            'occurred_on' => '2026-04-01', 'movement_type_id' => $leave, 'starts_on' => '2026-04-10',
+        ]])->assertUnprocessable()->assertJsonValidationErrors(['values.ends_on' => __('records.period_both_ends')]);
+        $this->postJson(self::API.'/records/movements', ['employee_id' => $employee->id, 'values' => [
+            'occurred_on' => '2026-04-01', 'movement_type_id' => $leave, 'starts_on' => '2026-01-01', 'ends_on' => '2027-02-05',
+        ]])->assertUnprocessable()->assertJsonValidationErrors(['values.ends_on' => __('records.period_too_long')]);
 
         $set = $this->postJson(self::API.'/records/movements', ['employee_id' => $employee->id, 'values' => [
             'occurred_on' => '٢٠٢٦-٠٤-٠١', 'movement_type_id' => (string) $leave, 'starts_on' => '2026-04-05', 'ends_on' => '2026-04-09',
-            'days' => '٥', 'course_mark' => '87.5', 'description' => '  إجازة   سنوية  ', 'entity' => '',
+            'course_mark' => '87.5', 'description' => '  إجازة   سنوية  ', 'entity' => '',
         ]])->assertCreated()->json('data.items.0.fields');
 
         $this->assertEquals(
-            ['occurred_on' => '2026-04-01', 'movement_type_id' => $leave, 'description' => 'إجازة سنوية', 'course_mark' => '87.50', 'starts_on' => '2026-04-05', 'ends_on' => '2026-04-09', 'days' => 5],
+            ['occurred_on' => '2026-04-01', 'movement_type_id' => $leave, 'description' => 'إجازة سنوية', 'course_mark' => '87.50', 'starts_on' => '2026-04-05', 'ends_on' => '2026-04-09'],
             collect($set)->pluck('new_value', 'field')->all(),
         );
 
-        // An archived item is no longer offered.
-        ListItem::queryFor('movement_type')->whereKey($leave)->update(['archived_at' => now()]);
-        $this->postJson(self::API.'/records/movements', ['employee_id' => $employee->id, 'values' => ['occurred_on' => '2026-04-01', 'movement_type_id' => $leave]])
-            ->assertUnprocessable()->assertJsonValidationErrors(['values.movement_type_id' => __('records.list_item_unavailable', ['field' => 'نوع الحركة'])]);
+        // The days are the period's calendar days, both ends included: computed, in the register (waiting here).
+        $this->getJson(self::API.'/records/movements?review_status=pending')->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.review_status', 'pending')->assertJsonPath('data.0.review_status_label', 'قيد التدقيق')
+            ->assertJsonPath('data.0.computed.days', 5)->assertJsonPath('data.0.approved_by', null);
+
+        // An archived item is no longer offered (an item without a code: coded items are never archived).
+        $notice = $this->itemId('conduct_type', 'تنويه');
+        ListItem::queryFor('conduct_type')->whereKey($notice)->update(['archived_at' => now()]);
+        $this->postJson(self::API.'/records/conduct', ['employee_id' => $employee->id, 'values' => ['occurred_on' => '2026-04-01', 'conduct_type_id' => $notice]])
+            ->assertUnprocessable()->assertJsonValidationErrors(['values.conduct_type_id' => __('records.list_item_unavailable', ['field' => 'نوع السجل'])]);
     }
 
     public function test_records_are_entered_for_approved_files_only(): void
     {
         $this->actingAsStaff($this->staffUser());
-        $pending = $this->postJson(self::API.'/employees', ['values' => ['first_name' => 'ليلى', 'father_name' => 'سعيد', 'family_name' => 'الحسن']])->json('data.employee.id');
+        $pending = $this->postJson(self::API.'/employees', ['values' => ['personal_number' => '44003', 'first_name' => 'ليلى', 'father_name' => 'سعيد', 'family_name' => 'الحسن']])->json('data.employee.id');
 
         $this->postJson(self::API.'/records/conduct', ['employee_id' => $pending, 'values' => ['occurred_on' => '2026-01-01', 'conduct_type_id' => $this->itemId('conduct_type', 'warning')]])
             ->assertUnprocessable()->assertJsonValidationErrors('employee_id');
@@ -136,9 +150,12 @@ class RecordRulesTest extends TestCase
         $post(['amount' => 75000, 'paid_amount' => 75000])->assertCreated();
 
         $this->getJson(self::API.'/records/debts?debt_status=overdue')->assertJsonCount(1, 'data')
-            ->assertJsonPath('data.0.computed', ['remaining_amount' => '400000.00', 'status' => ['value' => 'overdue', 'label' => 'متأخر']]);
-        $this->getJson(self::API.'/records/debts?debt_status=outstanding')->assertJsonCount(1, 'data')->assertJsonPath('data.0.computed.status.label', 'قائم');
-        $this->getJson(self::API.'/records/debts?debt_status=paid')->assertJsonCount(1, 'data')->assertJsonPath('data.0.computed.status.label', 'مسدد');
+            ->assertJsonPath('data.0.computed', [
+                'paid_total' => '100000.00', 'payments_total' => '0.00', 'remaining_amount' => '400000.00', 'installments_left' => 8,
+                'status' => 'overdue', 'status_label' => 'متأخر',
+            ]);
+        $this->getJson(self::API.'/records/debts?debt_status=outstanding')->assertJsonCount(1, 'data')->assertJsonPath('data.0.computed.status_label', 'قائم');
+        $this->getJson(self::API.'/records/debts?debt_status=paid')->assertJsonCount(1, 'data')->assertJsonPath('data.0.computed.status_label', 'مسدد');
 
         // Paying more than is left is refused when the payment is corrected.
         $debt = EmployeeDebt::query()->where('amount', 500000)->sole();
@@ -170,7 +187,7 @@ class RecordRulesTest extends TestCase
             'occurred_on' => '2026-05-02', 'conduct_type_id' => $this->itemId('conduct_type', 'complaint'),
             'subject' => 'تأخر متكرر', 'reported_by' => 'رئيس الشعبة', 'decision' => 'إنذار خطي', 'decision_number' => '45/ق',
             'decision_on' => '2026-05-10', 'conduct_status_id' => $this->itemId('conduct_status', 'صدر القرار'), 'document_link' => 'https://docs.example/45',
-        ]])->assertCreated()->assertJsonPath('data.status.value', 'pending');
+        ]])->assertCreated()->assertJsonPath('data.status', 'pending');
 
         $set = $this->getJson(self::API.'/record-changes?record_type=conduct')->json('data.0.id');
         $this->actingAsStaff($this->staffUser(StaffRole::Supervisor))->getJson(self::API."/record-changes/{$set}")

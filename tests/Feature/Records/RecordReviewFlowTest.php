@@ -29,21 +29,28 @@ class RecordReviewFlowTest extends TestCase
 
         $set = $this->actingAsStaff($entry)->postJson(self::API.'/records/movements', ['employee_id' => $employee->id, 'values' => $this->reward(), 'note' => 'قرار 12'])
             ->assertCreated()
-            ->assertJsonPath('data.status.value', 'pending')
-            ->assertJsonPath('data.record_type.value', 'movements')
-            ->assertJsonPath('data.items.0.action.value', 'create')
+            ->assertJsonPath('data.status', 'pending')
+            ->assertJsonPath('data.record_type', 'movements')
+            ->assertJsonPath('data.items.0.action', 'create')
             ->assertJsonPath('data.items.0.employee.id', $employee->id)
             ->assertJsonFragment(['field' => 'amount', 'label' => 'المبلغ', 'old_value' => null, 'old_display' => null, 'new_value' => '15000.00', 'new_display' => '15000.00'])
             ->assertJsonFragment(['field' => 'movement_type_id', 'new_display' => 'مكافأة'])
             ->json('data');
 
         $this->assertSame(0, EmployeeMovement::query()->count(), 'nothing is in the record before approval');
-        $this->getJson(self::API.'/records/movements')->assertJsonCount(0, 'data');
+
+        // The register shows it «قيد التدقيق», with its submission; the approved register has nothing yet.
+        $this->getJson(self::API.'/records/movements')->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $set['items'][0]['record_id'])
+            ->assertJsonPath('data.0.review_status', 'pending')->assertJsonPath('data.0.change_set_id', $set['id'])
+            ->assertJsonPath('data.0.fields.amount.value', '15000.00')->assertJsonPath('data.0.created_by.id', $entry->id);
+        $this->getJson(self::API.'/records/movements?review_status=approved')->assertJsonCount(0, 'data');
+        $this->getJson(self::API."/records/movements/{$set['items'][0]['record_id']}")->assertOk()->assertJsonPath('data.review_status', 'pending');
 
         $supervisor = $this->staffUser(StaffRole::Supervisor);
         $this->actingAsStaff($supervisor)->getJson(self::API.'/record-changes')->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.items_count', 1)->assertJsonPath('data.0.can_decide', true)->assertJsonMissingPath('data.0.items');
-        $this->postJson(self::API."/record-changes/{$set['id']}/approve")->assertOk()->assertJsonPath('data.status.value', 'approved');
+        $this->postJson(self::API."/record-changes/{$set['id']}/approve")->assertOk()->assertJsonPath('data.status', 'approved');
 
         $record = EmployeeMovement::query()->sole();
         $this->assertSame($set['items'][0]['record_id'], $record->id, 'the id chosen at submission');
@@ -54,7 +61,7 @@ class RecordReviewFlowTest extends TestCase
             ->assertJsonPath('data.0.employee.full_name', 'أحمد محمد الخطيب')
             ->assertJsonPath('data.0.fields.amount.value', '15000.00')
             ->assertJsonPath('data.0.fields.movement_type_id.display', 'مكافأة')
-            ->assertJsonPath('data.0.computed', ['year' => 2026, 'month' => 3])
+            ->assertJsonPath('data.0.computed', ['year' => 2026, 'month' => 3, 'days' => null])
             ->assertJsonPath('data.0.created_by.id', $entry->id);
         $this->getJson(self::API.'/records/movements?year=2025')->assertJsonCount(0, 'data');
 
@@ -66,7 +73,7 @@ class RecordReviewFlowTest extends TestCase
     {
         $record = $this->approvedMovement();
         $this->actingAsStaff($this->staffUser())->patchJson(self::API."/records/movements/{$record->id}", ['values' => ['amount' => 20000]])
-            ->assertCreated()->assertJsonPath('data.status.value', 'pending')
+            ->assertCreated()->assertJsonPath('data.status', 'pending')
             ->assertJsonFragment(['field' => 'amount', 'old_value' => '15000.00', 'new_value' => '20000.00']);
 
         $this->getJson(self::API."/records/movements/{$record->id}")
@@ -77,11 +84,11 @@ class RecordReviewFlowTest extends TestCase
         // The supervisor corrects another field: at once, logged as self-approved.
         $supervisor = $this->staffUser(StaffRole::Supervisor);
         $this->actingAsStaff($supervisor)->patchJson(self::API."/records/movements/{$record->id}", ['values' => ['description' => 'مكافأة تميز سنوية']])
-            ->assertCreated()->assertJsonPath('data.status.value', 'approved')->assertJsonPath('data.self_approved', true);
+            ->assertCreated()->assertJsonPath('data.status', 'approved')->assertJsonPath('data.self_approved', true);
         $this->assertSame('مكافأة تميز سنوية', $record->refresh()->description);
 
         $this->getJson(self::API."/records/movements/{$record->id}/history")->assertOk()->assertJsonCount(2, 'data')
-            ->assertJsonPath('data.0.action.value', 'create')->assertJsonPath('data.1.self_approved', true)
+            ->assertJsonPath('data.0.action', 'create')->assertJsonPath('data.1.self_approved', true)
             ->assertJsonPath('data.1.fields.0.old_display', 'مكافأة تميز');
     }
 
@@ -91,7 +98,7 @@ class RecordReviewFlowTest extends TestCase
         $this->actingAsStaff($this->staffUser(StaffRole::Supervisor));
 
         $this->postJson(self::API.'/records/movements', ['employee_id' => $record->employee_id, 'values' => $this->reward()])->assertForbidden();
-        $this->deleteJson(self::API."/records/movements/{$record->id}", ['note' => 'خطأ'])->assertForbidden();
+        $this->deleteJson(self::API."/records/movements/{$record->id}", ['reason' => 'خطأ'])->assertForbidden();
         $this->postJson(self::API.'/records/movements/batch', ['changes' => [['action' => 'create', 'employee_id' => $record->employee_id, 'values' => $this->reward()]]])
             ->assertForbidden();
 
@@ -105,9 +112,9 @@ class RecordReviewFlowTest extends TestCase
         $record = $this->approvedMovement();
         $entry = $this->staffUser();
 
-        $this->actingAsStaff($entry)->deleteJson(self::API."/records/movements/{$record->id}")->assertUnprocessable()->assertJsonValidationErrors('note');
-        $set = $this->deleteJson(self::API."/records/movements/{$record->id}", ['note' => 'أُدخلت مرتين'])->assertCreated()
-            ->assertJsonPath('data.items.0.action.value', 'delete')
+        $this->actingAsStaff($entry)->deleteJson(self::API."/records/movements/{$record->id}")->assertUnprocessable()->assertJsonValidationErrors('reason');
+        $set = $this->deleteJson(self::API."/records/movements/{$record->id}", ['reason' => 'أُدخلت مرتين'])->assertCreated()
+            ->assertJsonPath('data.items.0.action', 'delete')
             ->assertJsonFragment(['field' => 'amount', 'old_value' => '15000.00', 'new_value' => null])
             ->json('data.id');
         $this->assertNull($record->refresh()->deleted_at, 'still there until approved');
@@ -144,16 +151,16 @@ class RecordReviewFlowTest extends TestCase
         $this->postJson(self::API."/record-changes/{$set}/approve")->assertForbidden();
 
         $supervisor = $this->staffUser(StaffRole::Supervisor);
-        $this->actingAsStaff($supervisor)->postJson(self::API."/record-changes/{$set}/reject")->assertUnprocessable()->assertJsonValidationErrors('note');
+        $this->actingAsStaff($supervisor)->postJson(self::API."/record-changes/{$set}/reject")->assertUnprocessable()->assertJsonValidationErrors('reason');
         $this->postJson(self::API."/record-changes/{$set}/withdraw")->assertForbidden();
-        $this->postJson(self::API."/record-changes/{$set}/reject", ['note' => 'المبلغ غير صحيح'])->assertOk()->assertJsonPath('data.status.value', 'rejected');
+        $this->postJson(self::API."/record-changes/{$set}/reject", ['reason' => 'المبلغ غير صحيح'])->assertOk()->assertJsonPath('data.status', 'rejected');
         $this->postJson(self::API."/record-changes/{$set}/approve")->assertUnprocessable();
 
         $this->actingAsStaff($entry)->getJson(self::API.'/record-changes?status=rejected&mine=1')->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.review_note', 'المبلغ غير صحيح');
 
         $again = $this->postJson(self::API.'/records/movements', ['employee_id' => $employee->id, 'values' => $this->reward()])->json('data.id');
-        $this->postJson(self::API."/record-changes/{$again}/withdraw")->assertOk()->assertJsonPath('data.status.value', 'withdrawn');
+        $this->postJson(self::API."/record-changes/{$again}/withdraw")->assertOk()->assertJsonPath('data.status', 'withdrawn');
         $this->assertSame(0, EmployeeMovement::query()->count());
     }
 
@@ -183,7 +190,7 @@ class RecordReviewFlowTest extends TestCase
             'occurred_on' => '2026-02-01', 'conduct_type_id' => $this->itemId('conduct_type', 'thanks'),
         ]])->assertCreated();
 
-        $this->getJson(self::API."/record-changes?employee_id={$a->id}")->assertJsonCount(1, 'data')->assertJsonPath('data.0.record_type.value', 'movements');
+        $this->getJson(self::API."/record-changes?employee_id={$a->id}")->assertJsonCount(1, 'data')->assertJsonPath('data.0.record_type', 'movements');
         $this->getJson(self::API.'/record-changes?record_type=conduct')->assertJsonCount(1, 'data');
     }
 
@@ -191,7 +198,7 @@ class RecordReviewFlowTest extends TestCase
     {
         $employee = $this->employeeFile();
         $this->actingAsStaff($this->admin())->postJson(self::API.'/records/movements', ['employee_id' => $employee->id, 'values' => $this->reward()])
-            ->assertCreated()->assertJsonPath('data.status.value', 'approved');
+            ->assertCreated()->assertJsonPath('data.status', 'approved');
 
         return EmployeeMovement::query()->latest('created_at')->firstOrFail();
     }

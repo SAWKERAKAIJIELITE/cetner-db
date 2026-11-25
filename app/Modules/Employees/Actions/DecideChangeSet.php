@@ -10,6 +10,7 @@ use App\Modules\Employees\Models\Employee;
 use App\Modules\Employees\Models\EmployeeChangeSet;
 use App\Modules\Employees\Support\ReviewRights;
 use App\Modules\Identity\Models\StaffUser;
+use App\Modules\Notifications\Notifications\ChangeRejected;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -62,6 +63,11 @@ final class DecideChangeSet
                 'change_set_id' => $set->getKey(),
                 'reason' => $this->clean($note),
             ]);
+
+            // Back to its author, with the reason (D-046).
+            $set->submitter?->notify(new ChangeRejected('employees', $set->getKey(),
+                $set->kind === ChangeSetKind::Create ? 'إضافة ملف' : ($set->kind === ChangeSetKind::Review ? 'مراجعة دورة' : 'تعديل ملف'),
+                $employee->getKey(), $employee->fullName(), (string) $this->clean($note), $reviewer->fullName()));
 
             return $set->refresh();
         });

@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
  *
  * @property int $id
  * @property string $branch_name
- * @property string $daily_hours
+ * @property string $daily_hours computed by the database: the end of the day less its start
  * @property string $starts_at
  * @property string $ends_at
  * @property int $late_after_minutes
@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property list<int> $weekly_days_off ISO weekdays: 1 Monday … 7 Sunday
  * @property string $currency
  * @property int $annual_leave_days
+ * @property string $high_absence_rate percent: a month at or above it is flagged
  * @property int $review_window_monthly
  * @property int $review_window_quarterly
  * @property int $review_window_semi_annual
@@ -26,8 +27,8 @@ use Illuminate\Database\Eloquent\Model;
 class WorkSettings extends Model
 {
     public const EDITABLE = [
-        'branch_name', 'daily_hours', 'starts_at', 'ends_at', 'late_after_minutes', 'work_days_per_week', 'weekly_days_off',
-        'currency', 'annual_leave_days',
+        'branch_name', 'starts_at', 'ends_at', 'late_after_minutes', 'work_days_per_week', 'weekly_days_off',
+        'currency', 'annual_leave_days', 'high_absence_rate',
         'review_window_monthly', 'review_window_quarterly', 'review_window_semi_annual', 'review_window_annual',
     ];
 

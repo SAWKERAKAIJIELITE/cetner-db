@@ -343,6 +343,9 @@ Template at the end of this file.
   balance, and the four review windows (35, 100, 190, 370 days). CHECKs: the day ends after it starts, the windows grow
   (monthly ≤ quarterly ≤ semi-annual ≤ annual); the request says so in Arabic first. `PUT /settings/work` changes the
   fields sent; the audit keeps each change's before and after; the same value again records nothing.
+- **Step 4.1:** «ساعات العمل اليومية» is computed by the database from the day's start and end (the design marks it
+  automatic; two sources would drift), so it is no longer sent; the weekly days off (D-043) and the absence threshold
+  (D-042) joined the row.
 
 ### D-029 The workbook's sample structure and holidays are local only
 
@@ -426,6 +429,27 @@ Template at the end of this file.
   Three years of records take about 186 MB with their indexes (the change items 95 MB, the attendance 33 MB, the
   movements 20 MB, the sets 15 MB): about 62 MB a year, so with the file's history about 117 MB a year for 4,000
   people. Still nothing calls for a cache or partitioning.
+
+- **Measured again in Step 4.1**, the registers now reading the waiting additions too (the same data, 200 movements
+  waiting):
+
+  | Request | Median | Queries |
+  | ------- | -----: | ------: |
+  | `GET /records/attendance?year&month` | 25 ms | 13 |
+  | the same, 100 a page | 55 ms | 13 |
+  | `GET /records/movements` (no filter: 72,200 rows sorted) | 87 ms | 12 |
+  | `GET /records/movements?review_status=pending` | 24 ms | 12 |
+  | `GET /records/movements?q=500000012` | 72 ms | 13 |
+  | `GET /records/debts?debt_status=overdue` | 20 ms | 12 |
+  | `GET /employees/{id}/records/summary?year` | 24 ms | 31 |
+  | `GET /badges` | 33 ms | 15 |
+  | `GET /settings/lists/movement_type` (with each item's use) | 18 ms | 4 |
+  | `GET /employees/{id}` | 21 ms | 17 |
+
+  Two things made the union fast and are kept as rules: the waiting half selects the waiting sets first, as an array
+  the items' index takes (a plain join let the planner scan every change item); and it casts every column to the
+  table's exact type, or PostgreSQL does not merge the two halves and cannot push a filter into the table's indexes
+  (a year filter went from 74 ms to 3 ms).
 
 ---
 
@@ -629,13 +653,18 @@ Template at the end of this file.
   - **The same rules as the file (D-023, D-033).** Data entry adds, corrects and removes (`records.create`,
     `.update`, `.delete`); each waits for a reviewer. The supervisor corrects (`records.update`) and it applies at
     once, logged as self-approved; the supervisor neither adds nor removes (OD-9) but approves data entry's additions
-    and removals, since approving is reviewing, not entering (OD-17). The administrator does everything at once.
+    and removals, since approving is reviewing, not entering (OD-17, owner 25 Nov: yes). The administrator does
+    everything at once.
     Nobody approves their own; a refusal needs a reason; the author withdraws.
   - **`record_change_sets` and `record_change_items`**: a set is one kind of record and one or more changes; each
     item is an addition (its values), a correction (the approved values beside the new ones, changed fields only) or
     a removal (the record as it was, with the reason as the set's note). Append-only, decided once (triggers).
-  - **Pending beside the approved value**: a record shows the changes waiting for it; a pending addition is in the
-    review queue, not in the record, so no count includes what nobody approved.
+  - **Pending beside the approved value**: a record shows the corrections waiting for it. **A waiting addition is in
+    the register too** («قيد التدقيق», owner 25 Nov, the design's «حالة الإعتماد»): `GET /records/{type}` reads the
+    approved records and the waiting additions in one query (`review_status`: approved, pending, or both), the
+    waiting rows taken from their change items with the same columns. **Nothing counts them**: totals, the year's
+    figures, the file's debt columns and the reports read the record tables only. The workbook's free-text «الحالة» of a
+    movement stays its own field («حالة المعاملة الحالية»).
   - **Stale is refused**: a record corrected or removed since a change was sent, or an employee whose file is no longer
     approved, refuses the set; it is sent again against the values as they are.
   - **Batches** (`POST /records/{type}/batch`, at most 500 changes, `HR_RECORDS_BATCH_LIMIT`): a unit's month of
@@ -651,17 +680,23 @@ Template at the end of this file.
 
 - **Status:** Accepted
 - **Decision:**
-  - **Movements**: date and type required; «إلى تاريخ» not before «من تاريخ»; amount and course marks ≥ 0; days a whole
-    number (entered, as in the workbook). Year and month computed.
-  - **Attendance**: year, month, planned and attended days required; attended ≤ planned (the workbook's check);
+  - **Movements**: date and type required; «من تاريخ» and «إلى تاريخ» together, in order, under 400 days; amount and
+    course marks ≥ 0. **The days are the period's calendar days, both ends included, computed by the database**
+    (owner 25 Nov: not typed, not working days). **A leave needs its period.** Year and month computed.
+  - **Attendance**: year, month, planned and attended days required; the attended days may have a half (the workbook
+    takes any number; one decimal); attended ≤ planned (the workbook's check);
     planned ≤ the month's days; one month per employee (a partial unique index, checked against the queue too). The
     month is fixed once entered (a trigger): a wrong month is removed and entered again, so a month never moves onto
     another. **Absent days** are generated by the database (planned − attended); **absence rate** = absent ÷ planned
-    (0 when nothing was planned); a month at 20% or more is flagged (`high_absence`, the workbook's colour).
+    (0 when nothing was planned); a month at the branch's threshold or more is flagged (`high_absence`;
+    `work_settings.high_absence_rate`, the workbook's 20% by default, the design showing 10%: the settings managers
+    choose).
   - **Conduct**: date and type required; the decision, its number, date and status («حالة المعالجة») optional; the
     document link a text until Step 5 brings uploaded documents.
-  - **Debts**: the amount required, > 0; paid ≤ amount; **what is left** generated by the database (amount − paid);
-    **status** computed when read: paid (nothing left), late (its due date passed), outstanding.
+  - **Debts**: the amount required, > 0; «المبلغ المسدد» is what was paid when the debt was entered; later payments are
+    entries of their own (D-045); **what is left** generated by the database (amount − paid − payments); **status**
+    computed when read: paid (nothing left), late (its due date passed), outstanding; the instalments left (what is
+    left ÷ the monthly instalment, rounded up).
   - Values in one normal form, as for the file (Arabic digits, "1500" = "1500.00", empty = null).
 
 ### D-043 The month's planned days are suggested from the days off and the holidays
@@ -671,16 +706,18 @@ Template at the end of this file.
   Saturday by default; as many as 7 − «أيام العمل», a CHECK). `GET /records/attendance/planned-days?year&month`
   returns the month's working days less the holidays falling on a working day, each date once even where holidays
   overlap. A suggestion for the entry form; the planned days are still entered (a unit may work on a holiday).
-- **Assumed:** Friday and Saturday (OD-18).
+- **Answered** (owner 25 Nov, OD-18): Friday and Saturday off, so «الأحد - الخميس» as the design shows; the branch
+  settings also return `working_days`.
 
 ### D-044 The status report's year and the file's debt columns are computed when read
 
 - **Status:** Accepted
 - **Decision:**
-  - `GET /employees/{id}/records/summary?year` gives «مؤشرات السنة المختارة» with the workbook's formulas: leaves (a
-    movement whose type begins with «إجازة», any spelling, so a leave type added later counts, as in the workbook),
-    their days and the balance (`annual_leave_days` less every leave day, sick leave included, as the workbook counts
-    it: OD-19), courses, rewards and deductions, the attendance sums and rate, complaints, warnings, punishments and
+  - `GET /employees/{id}/records/summary?year` gives «مؤشرات السنة المختارة» with the workbook's formulas: leaves (the
+    four coded leave types, `leave_internal`, `leave_external`, `leave_sick`, `leave_emergency`, renamed or not, and
+    any type added later whose name begins with «إجازة», any spelling), their days and **the balance:
+    `annual_leave_days` less the internal and external leave days only** (owner 25 Nov, OD-19: not sick or
+    emergency leave, nor a leave type added later), courses, rewards and deductions, the attendance sums and rate, complaints, warnings, punishments and
     thanks, the debts (all of them, not the year's: open, late, what is left); and the report's lists: the last ten
     movements, the last five conduct records, the last month. Newest by date, then by entry (the workbook: by entry).
   - Courses, rewards, deductions and the four conduct counts find their list items by **code** (`course`, `reward`,
@@ -690,6 +727,60 @@ Template at the end of this file.
     `computed.total_remaining` on the file, `debts_remaining` and `?has_debts=` on the list): never stored, so they
     cannot drift from the record.
 - **Rejected:** storing the year's indicators on the file (they change with every record and with the calendar).
+
+### D-045 Each debt payment is an entry of its own, reviewed, never edited away
+
+- **Status:** Accepted (owner, 25 Nov; the design's «تسجيل دفعة مالية»)
+- **Decision:**
+  - **A fifth kind of record, `payments`** (`employee_debt_payments`): the debt, «تاريخ الدفعة», «مبلغ الدفعة» (> 0),
+    «طريقة السداد» (a 28th managed list, `payment_method`: «سداد نقدي/إشعار بنكي», «اقتطاع من الراتب»), «ملاحظة القيد».
+    Entered and reviewed like any record (D-041); the employee is the debt's.
+  - **Never corrected** (422): a wrong payment is removed with its reason and entered again; a trigger refuses any
+    change but the removal.
+  - **The debt's payments total is the database's**: a trigger keeps `payments_total` the sum of the kept payments,
+    and refuses anyone else writing it. What is left = amount − paid when entered − payments; a CHECK refuses paying
+    more than the debt. A payment over what is left is refused when sent; two waiting payments that together pay too
+    much: the second approval is refused.
+  - A debt with kept payments is not removed (its payments first); a debt is not corrected below what was paid of it.
+- **Rejected:** one «المبلغ المسدد» corrected by hand (the workbook's way: the history would show only the totals).
+
+### D-046 Notifications and the sidebar's counts, as the hiring system has them
+
+- **Status:** Accepted (the frontend's alignment notes, 25 Nov)
+- **Decision:**
+  - Laravel database notifications (`notifications`), each `{id, kind, title, message, details, read_at, created_at}`;
+    `GET /notifications` (mine, newest first, `unread=1`), `GET /notifications/unread-count`, `POST
+    /notifications/{id}/read` (404 for another's), `POST /notifications/read-all`.
+  - Two kinds: **`change_rejected`**, to a submission's author with the reviewer's reason (file and records); and
+    **`contract_ending_soon`**, every morning at 06:00 (`employees:remind-expiring-contracts`), for contracts ending
+    within 30 days, once per file and end date, to the active users who update files (data entry and the
+    supervisor), not the administrator or the general manager, as the hiring system does.
+  - **`GET /badges`**: `notifications.unread`; `reviews` (reviewers: the file's and the records' changes waiting for
+    them, not their own); `identity` (the administrator: identity changes waiting, files to lock); `mine.pending`;
+    `employees` (`contracts_ending_soon`, `monthly_overdue`). A section the user does not see is null.
+
+### D-047 The API keeps the hiring system's shapes, so the frontend reuses its screens
+
+- **Status:** Accepted (the frontend's «hr-project-for-backend» and «requirements-for-backend», 25 Nov)
+- **Decision:**
+  - **Labels beside values**: an enum is `status` and `status_label` (also `kind`, `cycle`, `record_type`, `action`,
+    `file_status`), never an object.
+  - **Reasons**: a refusal takes `reason` (3 to 2,000 characters), as do a record's removal and a deactivation; an
+    approval takes an optional `note`.
+  - **Lists**: `per_page` 5 to 100 (25), `sort` from each list's fixed set and `direction` (`asc`/`desc`), `page`;
+    resource collections with `meta` and `links`; the filters stay in the page links. The audit log and the history
+    keep 10 to 200.
+  - **The OpenAPI document** is the frontend's generated client: served under `/api/v1` (`scramble.api_path`), every
+    response typed (no hand-built pages, no untyped arrays), `scramble:analyze` at zero.
+  - **From the requirements**: «الرقم الذاتي» required on a new file (the workbook's key; records may name an employee
+    by it); the register's filters «نوع الدوام», «المنصب», «المرحلة التنظيمية», «الجنس»; the banner's filled out of
+    counted, the unit counting as the workbook's levels 1 and 2 (68 now, 73 with the five documents of Step 5); the
+    service's start and end dates; open and late debts on the file; each cycle's window and days since its review;
+    «عدد المستخدمين» of a list item and «عدد الموظفين الفعّالين» of a unit with the units under it; «ساعات العمل
+    اليومية» computed from the day's start and end; codes for the four leave types, the administrative movements,
+    the conduct types and «قيد التحقيق», which the dashboards of Step 6 count by.
+- **Kept apart** (the frontend's §8): no deletion of an employee (D-007), no list kind added from the app (D-024),
+  no unit moved (D-026).
 
 ---
 
@@ -710,11 +801,18 @@ Template at the end of this file.
 | OD-11 | The supervisor's own update: at once, or reviewed by another? | **Answered** (23 Nov): at once and logged; four eyes for it possibly later (D-023). |
 | OD-13 | One pair of lookup tables or one table per list? | **Answered** (23 Nov): one table per list (D-024). |
 | OD-14 | The identity lock: can a wrong locked value be corrected? | **Answered** (24 Nov): no. Six fields, locked once the administrator approves them, changed by nobody; the administrator checks them before approving (D-034). |
-| OD-15 | The workbook's «جهة العمل الحالية - مستوى تنظيمي 2 / 3» (AV, AW): the unit someone actually works in when it differs from their own? | **Assumed:** yes, one optional `current_work_unit_id` (D-032). |
+| OD-15 | (frontend Q-5) The workbook's «جهة العمل الحالية - مستوى تنظيمي 2 / 3» (AV, AW): the unit someone actually works in when it differs from their own? | **Assumed:** yes, one optional `current_work_unit_id` (D-032). |
 | OD-16 | What must a new file have? | **Assumed:** the three names only; the rest may come later and shows as missing (D-032). |
-| OD-17 | The supervisor does not add or remove records: may they approve data entry's additions and removals? | **Assumed:** yes, approving is reviewing (D-041). |
-| OD-18 | The weekly days off. | **Assumed:** Friday and Saturday; editable in the branch settings (D-043). |
-| OD-19 | «رصيد الإجازات المتبقي»: does sick or emergency leave come out of the annual balance? | **Assumed:** yes, every leave, as the workbook counts it (D-044). |
+| OD-17 | The supervisor does not add or remove records: may they approve data entry's additions and removals? | **Answered** (25 Nov): yes (D-041). |
+| OD-18 | The weekly days off. | **Answered** (25 Nov): Friday and Saturday, so «الأحد - الخميس» (D-043). |
+| OD-19 | «رصيد الإجازات المتبقي»: does sick or emergency leave come out of the annual balance? | **Answered** (25 Nov): no; internal and external leave only (D-044). |
+| OD-20 | The design's registers show «قيد التدقيق» and «معتمد» (frontend Q-10). | **Answered** (25 Nov): waiting additions in the registers, counted nowhere (D-041). |
+| OD-21 | Debt payments (frontend Q-15). | **Answered** (25 Nov): each payment an entry, reviewed, never edited; methods a list (D-045). Instalments are only a monthly amount: no schedule, so «متأخر قسط واحد» cannot be computed. |
+| OD-22 | Leave days (frontend Q-6). | **Answered** (25 Nov): calendar days from the period, both ends included (D-042). |
+| OD-23 | Do movements change the file (frontend Q-11)? «تسريح» setting «الحالة الوظيفية» and «تاريخ التسريح», «نقل داخلي» the unit… | **Open.** For now the file is updated by hand. |
+| OD-24 | «تاريخ التقديم» on the file's banner (frontend Q-12). | **Open.** The file has `created_at` and `activated_at` (approved). |
+| OD-25 | «صلة السكن بجهة الطوارئ» in the design, not in the workbook (frontend Q-13). | **Open.** Not a field. |
+| OD-26 | What the dashboard's period filters (frontend Q-14); what makes the attendance «complete» (Q-16); which data an import brings (Q-17). | **Open**, for Steps 6 and 7. |
 | OD-12 | Scale and performance (owner's questions, 23 Nov): cache, distributed database, history. | **Answered in D-031.** |
 
 ---

@@ -5,6 +5,7 @@ namespace App\Modules\Records\Actions;
 use App\Modules\Audit\Support\AuditTrail;
 use App\Modules\Employees\Enums\ChangeSetStatus;
 use App\Modules\Identity\Models\StaffUser;
+use App\Modules\Notifications\Notifications\ChangeRejected;
 use App\Modules\Records\Models\RecordChangeSet;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -51,6 +52,12 @@ final class DecideRecordChangeSet
                 'change_set_id' => $set->getKey(),
                 'reason' => $this->clean($note),
             ]);
+
+            // Back to its author, with the reason (D-046); one employee's name when the set is about one.
+            $employees = $set->items()->with('employee')->get()->pluck('employee')->unique('id');
+            $one = $employees->count() === 1 ? $employees->first() : null;
+            $set->submitter?->notify(new ChangeRejected('records', $set->getKey(), $set->record_type->label().($set->items_count > 1 ? " ({$set->items_count})" : ''),
+                $one?->getKey(), $one?->fullName(), (string) $this->clean($note), $reviewer->fullName(), $set->record_type->value));
 
             return $set->refresh();
         });

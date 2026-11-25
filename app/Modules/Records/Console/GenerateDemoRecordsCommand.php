@@ -96,12 +96,12 @@ class GenerateDemoRecordsCommand extends Command
             DB::statement(<<<SQL
                 INSERT INTO record_change_items (change_set_id, position, action, record_id, employee_id, new_values)
                 SELECT set_id, 1, 'create', id, employee_id, jsonb_build_object('occurred_on', on_date, 'movement_type_id', type_id, 'description', 'حركة تجريبية',
-                    'amount', CASE WHEN type_id = {$reward} THEN '10000.00' END) FROM demo_movements
+                    'amount', CASE WHEN type_id = {$reward} THEN '10000.00' END, 'starts_on', on_date, 'ends_on', on_date + 2) FROM demo_movements
                 SQL);
 
             DB::statement(<<<SQL
-                INSERT INTO employee_movements (id, employee_id, occurred_on, movement_type_id, description, amount, days, created_by, approved_by, created_at, updated_at)
-                SELECT id, employee_id, on_date, type_id, 'حركة تجريبية', CASE WHEN type_id = {$reward} THEN 10000 END, 3,
+                INSERT INTO employee_movements (id, employee_id, occurred_on, movement_type_id, description, amount, starts_on, ends_on, created_by, approved_by, created_at, updated_at)
+                SELECT id, employee_id, on_date, type_id, 'حركة تجريبية', CASE WHEN type_id = {$reward} THEN 10000 END, on_date, on_date + 2,
                     '{$author}', '{$author}', on_date, on_date FROM demo_movements
                 SQL);
 
@@ -121,10 +121,20 @@ class GenerateDemoRecordsCommand extends Command
                 FROM employees WHERE file_status = 'active' AND abs(hashtext(id::text)) % 10 < 3
                 SQL);
 
-            // A queue: a pending month of corrections.
+            // A queue: 200 movements waiting for review, shown «قيد التدقيق» in the register.
+            DB::statement(<<<'SQL'
+                CREATE TEMP TABLE demo_waiting ON COMMIT DROP AS
+                SELECT gen_random_uuid() AS set_id, gen_random_uuid() AS record_id, id AS employee_id
+                FROM employees WHERE file_status = 'active' ORDER BY id LIMIT 200
+                SQL);
             DB::statement(<<<SQL
                 INSERT INTO record_change_sets (id, record_type, status, items_count, submitted_by, submitted_at, created_at, updated_at)
-                SELECT gen_random_uuid(), 'movements', 'pending', 1, '{$author}', now(), now(), now() FROM generate_series(1, 200)
+                SELECT set_id, 'movements', 'pending', 1, '{$author}', now(), now(), now() FROM demo_waiting
+                SQL);
+            DB::statement(<<<SQL
+                INSERT INTO record_change_items (change_set_id, position, action, record_id, employee_id, new_values)
+                SELECT set_id, 1, 'create', record_id, employee_id,
+                    jsonb_build_object('occurred_on', now()::date, 'movement_type_id', {$reward}, 'amount', '5000.00') FROM demo_waiting
                 SQL);
         });
 

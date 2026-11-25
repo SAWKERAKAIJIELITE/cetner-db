@@ -13,8 +13,7 @@ use Carbon\CarbonImmutable;
  */
 final class PlannedDays
 {
-    /** @return array<string, mixed> */
-    public static function of(int $year, int $month): array
+    public static function of(int $year, int $month): PlannedMonth
     {
         $first = CarbonImmutable::create($year, $month, 1);
         $last = $first->endOfMonth()->startOfDay();
@@ -43,15 +42,6 @@ final class PlannedDays
 
         ksort($holidayDates);
 
-        return [
-            'year' => $year,
-            'month' => $month,
-            'days_in_month' => $first->daysInMonth,
-            'weekly_days_off' => $daysOff,
-            'working_days' => $working,
-            /** The holiday dates on working days, each once. */
-            'holiday_dates' => array_keys($holidayDates),
-            'planned_days' => $working - count($holidayDates),
-        ];
+        return new PlannedMonth($year, $month, (int) $first->daysInMonth, $daysOff, $working, array_keys($holidayDates), $working - count($holidayDates));
     }
 }

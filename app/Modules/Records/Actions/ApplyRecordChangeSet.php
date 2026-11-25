@@ -9,6 +9,7 @@ use App\Modules\Records\Enums\RecordAction;
 use App\Modules\Records\Enums\RecordType;
 use App\Modules\Records\Models\EmployeeRecord;
 use App\Modules\Records\Models\RecordChangeSet;
+use App\Modules\Records\Support\RecordCatalogue;
 use App\Modules\Records\Support\RecordValues;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -57,7 +58,8 @@ final class ApplyRecordChangeSet
             $current = RecordValues::of($record);
 
             foreach ($item->old_values as $key => $value) {
-                if (($current[$key] ?? null) !== $value) {
+                // Both in the normal form: JSON gives 20 back for 20.0.
+                if (($current[$key] ?? null) !== RecordValues::normal(RecordCatalogue::field($type, $key), $value)) {
                     $stale[] = $item->position;
 
                     break;
@@ -70,6 +72,12 @@ final class ApplyRecordChangeSet
         }
 
         $now = now();
+
+        foreach ($items as $item) {
+            if ($item->action === RecordAction::Delete && $type === RecordType::Debts && SubmitRecordChanges::hasPayments($item->record_id)) {
+                throw ValidationException::withMessages(['change_set' => __('records.debt_has_payments')]);
+            }
+        }
 
         foreach ($items as $item) {
             match ($item->action) {
@@ -108,6 +116,11 @@ final class ApplyRecordChangeSet
                 throw ValidationException::withMessages(['change_set' => __('records.attendance_exists', ['month' => $values['month'].'/'.$values['year']])]);
             }
 
+            // Payments approved together, or after another, paying more than is left; or a removed debt.
+            if (($e->errorInfo[0] ?? null) === '23514' && $type === RecordType::Payments) {
+                throw ValidationException::withMessages(['change_set' => __(str_contains($e->getMessage(), 'not_overpaid') ? 'records.payments_over_debt' : 'records.debt_unknown', ['remaining' => ''])]);
+            }
+
             throw $e;
         }
     }
@@ -116,7 +129,7 @@ final class ApplyRecordChangeSet
     private function update(RecordType $type, EmployeeRecord $record, array $values, int $position, int $count): void
     {
         // Each change was checked against the record as it was sent; checked again on the record as it is now.
-        RecordValues::ensureConsistent($type, array_merge(RecordValues::of($record), $values), $count === 1 ? 'values' : 'changes.'.($position - 1).'.values');
+        RecordValues::ensureConsistent($type, array_merge(RecordValues::of($record), $values), $count === 1 ? 'values' : 'changes.'.($position - 1).'.values', (float) $record->getAttribute('payments_total'));
 
         $record->forceFill($values)->save();
     }

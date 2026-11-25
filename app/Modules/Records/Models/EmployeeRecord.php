@@ -44,6 +44,14 @@ abstract class EmployeeRecord extends Model
             $casts[$key] = match ($field['type']) {
                 'date' => 'date:Y-m-d',
                 'int', 'list' => 'integer',
+                'days' => 'float',
+                default => null,
+            };
+        }
+
+        foreach ($this->recordType()->generated() as $column) {
+            $casts[$column] = match ($column) {
+                'days' => 'integer',
                 default => null,
             };
         }

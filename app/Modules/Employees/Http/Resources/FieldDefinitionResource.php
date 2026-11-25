@@ -25,9 +25,12 @@ class FieldDefinitionResource extends JsonResource
             'type' => $this->type,
             /** For a list field: the list's key (GET /settings/lists/{key}). */
             'list' => $this->list_key,
+            /** @var int|float|null */
             'min' => $field['min'] ?? null,
+            /** @var int|float|null */
             'max' => $field['max'] ?? null,
-            'cycle' => ['value' => $this->cycle->value, 'label' => $this->cycle->label()],
+            'cycle' => $this->cycle->value,
+            'cycle_label' => $this->cycle->label(),
             'counts_for_completeness' => $this->counts_for_completeness,
             /** It identifies the person: a change needs the administrator's approval (D-034). */
             'identity' => $this->identity,

@@ -6,6 +6,7 @@ use App\Modules\Employees\Enums\ChangeSetStatus;
 use App\Modules\Employees\Enums\Cycle;
 use App\Modules\Employees\Models\Employee;
 use App\Modules\Employees\Support\EmployeeComputed;
+use App\Modules\Employees\Support\EmployeeDerived;
 use App\Modules\Employees\Support\EmployeeWarnings;
 use App\Modules\Employees\Support\FieldDefinitions;
 use App\Modules\Employees\Support\FieldValues;
@@ -57,7 +58,8 @@ class EmployeeResource extends JsonResource
 
         return [
             'id' => $this->id,
-            'file_status' => ['value' => $this->file_status->value, 'label' => $this->file_status->label()],
+            'file_status' => $this->file_status->value,
+            'file_status_label' => $this->file_status->label(),
             'full_name' => $this->fullName(),
             'created_at' => $this->created_at?->toIso8601String(),
             'activated_at' => $this->activated_at?->toIso8601String(),
@@ -77,6 +79,7 @@ class EmployeeResource extends JsonResource
                 'locked' => $pair[0]->identity && IdentityLock::isLocked($this->resource) && $pair[1] !== null,
                 'value' => $pair[1],
                 'display' => $labels->display($key, $pair[1]),
+                /** @var list<array{change_set_id: string, value: string|int|float|bool|null, display: ?string, submitted_by: StaffUserSummaryResource, submitted_at: string, needs_identity_review: bool}> */
                 'pending' => array_map(fn ($p) => ['display' => $labels->display($key, $p['value'])] + $p, $pending[$key] ?? []),
             ]),
             /** The workbook's formulas, as of today in Damascus. */
@@ -84,6 +87,10 @@ class EmployeeResource extends JsonResource
                 'full_name' => $this->fullName(),
                 'age' => EmployeeComputed::age($this->resource),
                 'service_years' => EmployeeComputed::serviceYears($this->resource),
+                /** The date the service is counted from (the earliest of assignment, appointment, contract signature), to show it as years, months and days. */
+                'service_started_on' => EmployeeComputed::serviceStartedOn($this->resource),
+                /** The date it is counted to: «تاريخ التسريح» if set, otherwise today. */
+                'service_ended_on' => EmployeeComputed::serviceEndedOn($this->resource),
                 'contract_days_left' => EmployeeComputed::contractDaysLeft($this->resource),
                 'org_unit_path' => $labels->unitPath($this->org_unit_id),
                 'current_work_unit_path' => $labels->unitPath($this->current_work_unit_id ?? $this->org_unit_id),
@@ -91,11 +98,16 @@ class EmployeeResource extends JsonResource
                 ...DebtTotals::of($this->id),
             ],
             'completeness' => (float) $this->completeness,
+            /** The banner's «61 / 73»: counted fields filled, and counted fields (the unit counts as levels 1 and 2). */
+            'completeness_filled' => EmployeeDerived::countedTotal() - collect($this->missing_fields ?? [])->sum(fn ($keys) => count($keys)),
+            'completeness_counted' => EmployeeDerived::countedTotal(),
             /** Counted fields still empty, by cycle. */
             'missing_fields' => collect($this->missing_fields ?? [])->map(fn ($keys, $cycle) => [
-                'cycle' => ['value' => $cycle, 'label' => Cycle::from($cycle)->label()],
+                'cycle' => $cycle,
+                'cycle_label' => Cycle::from($cycle)->label(),
                 'count' => count($keys),
-                'fields' => array_map(fn ($k) => ['key' => $k, 'label' => FieldDefinitions::all()[$k]->label_ar], $keys),
+                /** @var list<array{key: string, label: string}> */
+                'fields' => array_map(fn ($k) => ['key' => $k, 'label' => EmployeeDerived::label($k)], $keys),
             ])->values(),
             'warnings' => $this->isActive() ? EmployeeWarnings::of($this->resource, $reviews) : [],
             'reviews' => $reviews,

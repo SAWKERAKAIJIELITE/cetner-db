@@ -19,7 +19,11 @@ class RecordChangeIndexRequest extends FormRequest
             'employee_id' => ['nullable', 'uuid'],
             /** Only the ones I submitted. */
             'mine' => ['nullable', 'boolean'],
-            'per_page' => ['nullable', 'integer', 'between:10,100'],
+            /** submitted_at (the queue's default, oldest first) or reviewed_at (decided sets' default, newest first). */
+            'sort' => ['nullable', 'in:submitted_at,reviewed_at'],
+            'direction' => ['nullable', 'in:asc,desc'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'between:5,100'],
         ];
     }
 }

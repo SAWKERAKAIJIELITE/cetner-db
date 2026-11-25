@@ -19,7 +19,7 @@ class IdentityLockTest extends TestCase
     private function dataEntryFile(): Employee
     {
         $set = $this->actingAsStaff($this->staffUser())->postJson(self::API.'/employees', ['values' => [
-            'first_name' => 'ليلى', 'father_name' => 'سعيد', 'family_name' => 'الحسن', 'national_number' => '44444444444',
+            'personal_number' => '44001', 'first_name' => 'ليلى', 'father_name' => 'سعيد', 'family_name' => 'الحسن', 'national_number' => '44444444444',
         ]])->json('data');
         $this->actingAsStaff($this->staffUser(StaffRole::Supervisor))->postJson(self::API."/employee-changes/{$set['id']}/approve")->assertOk();
 
@@ -69,7 +69,7 @@ class IdentityLockTest extends TestCase
 
         // Other fields stay changeable.
         $this->actingAsStaff($this->staffUser(StaffRole::Supervisor))->patchJson(self::API."/employees/{$employee->id}", ['values' => ['birth_date' => '1990-01-01', 'gender_id' => $this->itemId('gender', 'male')]])
-            ->assertCreated()->assertJsonPath('data.status.value', 'approved')->assertJsonPath('data.needs_identity_review', false);
+            ->assertCreated()->assertJsonPath('data.status', 'approved')->assertJsonPath('data.needs_identity_review', false);
     }
 
     public function test_an_empty_identity_field_is_filled_once_by_the_administrators_approval(): void
@@ -77,8 +77,8 @@ class IdentityLockTest extends TestCase
         $employee = $this->employeeFile();
         $before = $employee->identity_hash;
 
-        $set = $this->actingAsStaff($this->staffUser())->patchJson(self::API."/employees/{$employee->id}", ['values' => ['mother_name' => 'مريم', 'personal_number' => '55667']])
-            ->assertCreated()->assertJsonPath('data.status.value', 'pending')->assertJsonPath('data.needs_identity_review', true)->json('data.id');
+        $set = $this->actingAsStaff($this->staffUser())->patchJson(self::API."/employees/{$employee->id}", ['values' => ['mother_name' => 'مريم']])
+            ->assertCreated()->assertJsonPath('data.status', 'pending')->assertJsonPath('data.needs_identity_review', true)->json('data.id');
 
         $this->actingAsStaff($this->staffUser(StaffRole::Supervisor))->postJson(self::API."/employee-changes/{$set}/approve")->assertForbidden();
         $this->actingAsStaff($this->admin())->postJson(self::API."/employee-changes/{$set}/approve")->assertOk();
@@ -98,7 +98,7 @@ class IdentityLockTest extends TestCase
 
         // Before the lock, an identity correction is possible, and goes to the administrator.
         $set = $this->actingAsStaff($this->staffUser(StaffRole::Supervisor))->patchJson(self::API."/employees/{$employee->id}", ['values' => ['family_name' => 'الحسني']])
-            ->assertJsonPath('data.status.value', 'pending')->assertJsonPath('data.needs_identity_review', true)->json('data.id');
+            ->assertJsonPath('data.status', 'pending')->assertJsonPath('data.needs_identity_review', true)->json('data.id');
 
         $this->actingAsStaff($this->admin())->getJson(self::API.'/employees?identity_locked=0')->assertJsonCount(1, 'data');
         $this->postJson(self::API."/employees/{$employee->id}/identity/lock")->assertUnprocessable()
@@ -139,13 +139,13 @@ class IdentityLockTest extends TestCase
 
         $this->postJson(self::API."/employee-changes/{$second}/approve")->assertUnprocessable()->assertJsonValidationErrors('values');
         $this->assertSame('سعيد', $employee->refresh()->father_name);
-        $this->postJson(self::API."/employee-changes/{$second}/reject", ['note' => 'الهوية مثبتة'])->assertOk();
+        $this->postJson(self::API."/employee-changes/{$second}/reject", ['reason' => 'الهوية مثبتة'])->assertOk();
     }
 
     public function test_the_administrator_approving_a_new_file_locks_it(): void
     {
         $set = $this->actingAsStaff($this->staffUser())->postJson(self::API.'/employees', ['values' => [
-            'first_name' => 'هدى', 'father_name' => 'محمود', 'family_name' => 'السيد',
+            'personal_number' => '44002', 'first_name' => 'هدى', 'father_name' => 'محمود', 'family_name' => 'السيد',
         ]])->json('data');
 
         $this->actingAsStaff($this->admin())->postJson(self::API."/employee-changes/{$set['id']}/approve")->assertOk();

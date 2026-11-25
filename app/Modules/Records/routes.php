@@ -5,9 +5,9 @@ use App\Modules\Records\Http\Controllers\RecordChangeController;
 use App\Modules\Records\Http\Controllers\RecordController;
 use Illuminate\Support\Facades\Route;
 
-// Under /api/v1/staff (ModuleServiceProvider). `{type}`: movements, attendance, conduct, debts.
+// Under /api/v1/staff (ModuleServiceProvider). `{type}`: movements, attendance, conduct, debts, payments.
 Route::middleware(['auth:staff', 'staff.active'])->group(function () {
-    $types = ['movements', 'attendance', 'conduct', 'debts'];
+    $types = ['movements', 'attendance', 'conduct', 'debts', 'payments'];
 
     Route::middleware('can:records.view')->group(function () use ($types) {
         Route::get('records/attendance/planned-days', [EmployeeRecordsController::class, 'plannedDays']);

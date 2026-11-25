@@ -10,7 +10,10 @@ class StoreRecordRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'employee_id' => ['required', 'uuid'],
+            /** Whose record; or personal_number. A payment may give neither: its debt's employee. */
+            'employee_id' => ['nullable', 'uuid', 'required_without_all:personal_number,values.debt_id'],
+            /** «الرقم الذاتي», instead of employee_id; an unknown number is refused. */
+            'personal_number' => ['nullable', 'string', 'max:20'],
             /** field => value; the required fields of the kind must be there. */
             'values' => ['required', 'array'],
             'note' => ['nullable', 'string', 'max:1000'],

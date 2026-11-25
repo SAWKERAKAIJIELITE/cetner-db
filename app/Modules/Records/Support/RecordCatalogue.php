@@ -9,8 +9,9 @@ use App\Modules\Records\Enums\RecordType;
  * are the file's, shown beside the record, not entered again; the year, month, row number and key columns
  * were the workbook's machinery.
  *
- * type: date, text (one line, `max`), longtext, int (`min`, `max`), decimal (`scale`, `min`, `max`), money, list
- * (`list`: a managed list's key). `required`: on adding. `fixed`: set when added, never changed.
+ * type: date, text (one line, `max`), longtext, int (`min`, `max`), days (one decimal: a half day), decimal
+ * (`scale`, `min`, `max`), money, list (`list`: a managed list's key), debt (a kept debt of the same employee).
+ * `required`: on adding. `fixed`: set when added, never changed. A movement's days are computed from its dates.
  */
 final class RecordCatalogue
 {
@@ -30,7 +31,6 @@ final class RecordCatalogue
                 'amount' => ['label' => 'المبلغ', 'type' => 'money'],
                 'starts_on' => ['label' => 'من تاريخ', 'type' => 'date'],
                 'ends_on' => ['label' => 'إلى تاريخ', 'type' => 'date'],
-                'days' => ['label' => 'عدد الأيام', 'type' => 'int', 'min' => 0, 'max' => 3660],
                 'status' => ['label' => 'الحالة', 'type' => 'text', 'max' => 100],
                 'notes' => self::NOTES,
             ],
@@ -38,7 +38,8 @@ final class RecordCatalogue
                 'year' => ['label' => 'السنة', 'type' => 'int', 'min' => 2000, 'max' => 2100, 'required' => true, 'fixed' => true],
                 'month' => ['label' => 'الشهر', 'type' => 'int', 'min' => 1, 'max' => 12, 'required' => true, 'fixed' => true],
                 'planned_days' => ['label' => 'أيام الدوام المقررة', 'type' => 'int', 'min' => 0, 'max' => 31, 'required' => true],
-                'attended_days' => ['label' => 'أيام الدوام الفعلية (الحضور)', 'type' => 'int', 'min' => 0, 'max' => 31, 'required' => true],
+                // A half day too: the workbook takes any number up to the planned days.
+                'attended_days' => ['label' => 'أيام الدوام الفعلية (الحضور)', 'type' => 'days', 'min' => 0, 'max' => 31, 'required' => true],
                 'exceptional_skills' => ['label' => 'المهارات الاستثنائية', 'type' => 'longtext', 'max' => 2000],
                 'notes' => self::NOTES,
             ],
@@ -60,10 +61,18 @@ final class RecordCatalogue
                 'reason' => ['label' => 'سبب الدين / التفاصيل', 'type' => 'longtext', 'max' => 4000],
                 'incurred_on' => ['label' => 'تاريخ الدين', 'type' => 'date'],
                 'amount' => ['label' => 'قيمة الدين', 'type' => 'money', 'required' => true, 'positive' => true],
+                // Paid before the debt was entered; later payments are entries of their own (D-045).
                 'paid_amount' => ['label' => 'المبلغ المسدد', 'type' => 'money'],
                 'monthly_installment' => ['label' => 'القسط الشهري', 'type' => 'money'],
                 'due_on' => ['label' => 'تاريخ الاستحقاق', 'type' => 'date'],
                 'notes' => self::NOTES,
+            ],
+            RecordType::Payments => [
+                'debt_id' => ['label' => 'الدين', 'type' => 'debt', 'required' => true, 'fixed' => true],
+                'paid_on' => ['label' => 'تاريخ الدفعة', 'type' => 'date', 'required' => true],
+                'amount' => ['label' => 'مبلغ الدفعة', 'type' => 'money', 'required' => true, 'positive' => true],
+                'payment_method_id' => ['label' => 'طريقة السداد', 'type' => 'list', 'list' => 'payment_method', 'required' => true],
+                'notes' => ['label' => 'ملاحظة القيد', 'type' => 'longtext', 'max' => 2000],
             ],
         };
     }

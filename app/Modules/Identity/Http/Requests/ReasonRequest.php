@@ -10,7 +10,7 @@ class ReasonRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'reason' => ['required', 'string', 'min:3', 'max:1000'],
+            'reason' => ['required', 'string', 'min:3', 'max:2000'],
         ];
     }
 }

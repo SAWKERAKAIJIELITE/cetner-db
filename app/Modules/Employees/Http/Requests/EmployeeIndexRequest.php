@@ -16,8 +16,18 @@ class EmployeeIndexRequest extends FormRequest
             'org_unit_id' => ['nullable', 'integer'],
             /** With the units under it (default true). */
             'include_sub_units' => ['nullable', 'boolean'],
+            /** «حالة الموظف» */
             'employee_status_id' => ['nullable', 'integer'],
+            /** «الحالة الوظيفية» */
             'job_status_id' => ['nullable', 'integer'],
+            /** «نوع الدوام» */
+            'work_schedule_id' => ['nullable', 'integer'],
+            /** «المستوى التنظيمي (المنصب)» */
+            'position_level_id' => ['nullable', 'integer'],
+            /** «المرحلة التنظيمية» */
+            'org_stage_id' => ['nullable', 'integer'],
+            /** «الجنس» */
+            'gender_id' => ['nullable', 'integer'],
             /** active (default), pending (added, waiting), rejected, withdrawn */
             'file_status' => ['nullable', Rule::enum(FileStatus::class)],
             /** Contracts ending from today to this many days ahead. */
@@ -31,8 +41,12 @@ class EmployeeIndexRequest extends FormRequest
             'has_debts' => ['nullable', 'boolean'],
             /** Files with a change waiting for review. */
             'has_pending' => ['nullable', 'boolean'],
-            'sort' => ['nullable', 'in:name,completeness,contract_ends_on,created_at'],
-            'per_page' => ['nullable', 'integer', 'between:10,100'],
+            /** name (default), personal_number, completeness, contract_ends_on, created_at */
+            'sort' => ['nullable', 'in:name,personal_number,completeness,contract_ends_on,created_at'],
+            /** asc (default) or desc; created_at defaults to desc. */
+            'direction' => ['nullable', 'in:asc,desc'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'between:5,100'],
         ];
     }
 }

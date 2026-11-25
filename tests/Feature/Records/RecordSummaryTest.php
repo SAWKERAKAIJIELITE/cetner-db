@@ -20,9 +20,10 @@ class RecordSummaryTest extends TestCase
             'values' => ['occurred_on' => $on, 'movement_type_id' => $this->itemId('movement_type', $type)] + $extra,
         ])->assertCreated();
 
-        $move('2026-01-10', 'إجازة داخلية', ['days' => 3]);
-        $move('2026-02-10', 'إجازة مرضية', ['days' => 4]);
-        $move('2025-12-20', 'إجازة خارجية', ['days' => 10]);
+        // A leave's days are its calendar days, both ends included (owner, 25 Nov).
+        $move('2026-01-10', 'leave_internal', ['starts_on' => '2026-01-10', 'ends_on' => '2026-01-12']);
+        $move('2026-02-10', 'leave_sick', ['starts_on' => '2026-02-10', 'ends_on' => '2026-02-13']);
+        $move('2025-12-20', 'leave_external', ['starts_on' => '2025-12-20', 'ends_on' => '2025-12-29']);
         $move('2026-03-01', 'course', ['course_mark' => 91]);
         $move('2026-03-05', 'reward', ['amount' => 15000]);
         $move('2026-04-05', 'reward', ['amount' => 5000]);
@@ -32,7 +33,15 @@ class RecordSummaryTest extends TestCase
         // A leave type the settings managers add counts as a leave, as in the workbook (its name begins with «إجازة»),
         // spelled without the hamza too.
         $this->postJson(self::API.'/settings/lists/movement_type/items', ['label' => 'اجازة أمومة'])->assertCreated();
-        $move('2026-05-01', 'اجازة أمومة', ['days' => 5]);
+        $move('2026-05-01', 'اجازة أمومة', ['starts_on' => '2026-05-01', 'ends_on' => '2026-05-05']);
+
+        // A leave without its period is refused.
+        $this->postJson(self::API.'/records/movements', ['employee_id' => $employee->id, 'values' => [
+            'occurred_on' => '2026-06-01', 'movement_type_id' => $this->itemId('movement_type', 'leave_emergency'),
+        ]])->assertUnprocessable()->assertJsonValidationErrors(['values.starts_on' => __('records.leave_needs_period')]);
+
+        // Renaming a leave type keeps it a leave (its code).
+        ListItem::queryFor('movement_type')->where('code', 'leave_internal')->update(['label' => 'عطلة داخلية']);
 
         // Renaming a coded item changes nothing.
         ListItem::queryFor('movement_type')->where('code', 'reward')->update(['label' => 'مكافأة مالية']);
@@ -55,7 +64,8 @@ class RecordSummaryTest extends TestCase
             ->getJson(self::API."/employees/{$employee->id}/records/summary?year=2026")->assertOk()->json('data');
 
         $this->assertSame(2026, $summary['year']);
-        $this->assertSame(['count' => 3, 'days' => 12, 'balance' => 9], $summary['leaves']);
+        // Three leaves, 12 days; only the internal leave's 3 days come out of the 21 (owner: not sick leave, nor a leave type added later).
+        $this->assertSame(['count' => 3, 'days' => 12, 'balance' => 18], $summary['leaves']);
         $this->assertSame(1, $summary['courses']);
         $this->assertSame('20000.00', $summary['rewards_total']);
         $this->assertSame('2500.00', $summary['deductions_total']);
@@ -88,7 +98,7 @@ class RecordSummaryTest extends TestCase
         $this->actingAsStaff($this->admin())->postJson(self::API.'/records/debts', ['employee_id' => $employee->id, 'values' => ['amount' => 1000]])->assertCreated();
         $debt = $this->getJson(self::API.'/records/debts')->json('data.0.id');
 
-        $this->deleteJson(self::API."/records/debts/{$debt}", ['note' => 'دين مكرر'])->assertCreated()->assertJsonPath('data.status.value', 'approved');
+        $this->deleteJson(self::API."/records/debts/{$debt}", ['reason' => 'دين مكرر'])->assertCreated()->assertJsonPath('data.status', 'approved');
 
         $this->getJson(self::API."/employees/{$employee->id}/records/summary")->assertJsonPath('data.debts.has_debts', false);
         $this->getJson(self::API."/employees/{$employee->id}")->assertJsonPath('data.computed.total_remaining', '0.00');

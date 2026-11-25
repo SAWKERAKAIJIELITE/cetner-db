@@ -61,8 +61,11 @@ class HolidayAndWorkSettingsTest extends TestCase
             'late_after_minutes' => 10,
             'work_days_per_week' => 5,
             'weekly_days_off' => [5, 6],
+            // «الأحد - الخميس»
+            'working_days' => [7, 1, 2, 3, 4],
             'currency' => 'ل.س',
             'annual_leave_days' => 21,
+            'high_absence_rate' => 20,
             'review_windows' => ['monthly' => 35, 'quarterly' => 100, 'semi_annual' => 190, 'annual' => 370],
             'updated_at' => WorkSettings::current()->updated_at->toIso8601String(),
         ]]);
@@ -73,18 +76,21 @@ class HolidayAndWorkSettingsTest extends TestCase
         $admin = $this->admin();
         $this->actingAsStaff($admin);
 
-        $this->putJson(self::API.'/settings/work', ['daily_hours' => 7.5, 'ends_at' => '15:30', 'starts_at' => '08:00', 'currency' => 'USD'])->assertOk()
-            ->assertJsonPath('data.daily_hours', 7.5)->assertJsonPath('data.ends_at', '15:30')->assertJsonPath('data.currency', 'USD');
+        // The daily hours are the day's end less its start: computed, never sent.
+        $this->putJson(self::API.'/settings/work', ['ends_at' => '15:30', 'starts_at' => '08:00', 'currency' => 'USD', 'high_absence_rate' => 10])->assertOk()
+            ->assertJsonPath('data.daily_hours', 7.5)->assertJsonPath('data.ends_at', '15:30')->assertJsonPath('data.currency', 'USD')
+            ->assertJsonPath('data.high_absence_rate', 10);
+        $this->putJson(self::API.'/settings/work', ['daily_hours' => 6])->assertUnprocessable()->assertJsonValidationErrors('daily_hours');
 
         $event = AuditEvent::query()->where('event', 'settings.work_updated')->sole();
-        $this->assertEqualsCanonicalizing(['daily_hours', 'ends_at', 'currency'], array_keys($event->context['changes']));
+        $this->assertEqualsCanonicalizing(['ends_at', 'currency', 'high_absence_rate'], array_keys($event->context['changes']));
 
         $this->putJson(self::API.'/settings/work', ['ends_at' => '07:00'])->assertUnprocessable()
             ->assertJsonPath('errors.ends_at.0', __('settings.work_ends_before_start'));
         $this->putJson(self::API.'/settings/work', ['review_window_quarterly' => 20])->assertUnprocessable()
             ->assertJsonPath('errors.review_window_quarterly.0', __('settings.review_windows_order'));
-        $this->putJson(self::API.'/settings/work', ['work_days_per_week' => 8, 'daily_hours' => 0, 'starts_at' => '8am'])->assertUnprocessable()
-            ->assertJsonValidationErrors(['work_days_per_week', 'daily_hours', 'starts_at']);
+        $this->putJson(self::API.'/settings/work', ['work_days_per_week' => 8, 'high_absence_rate' => 0, 'starts_at' => '8am'])->assertUnprocessable()
+            ->assertJsonValidationErrors(['work_days_per_week', 'high_absence_rate', 'starts_at']);
 
         // The days off follow the working days: changed together, as many as the week has without work.
         $this->putJson(self::API.'/settings/work', ['work_days_per_week' => 6])->assertUnprocessable()
@@ -96,7 +102,7 @@ class HolidayAndWorkSettingsTest extends TestCase
             ->assertJsonPath('data.weekly_days_off', [5, 6]);
 
         // Sending the same values changes nothing and records nothing.
-        $this->putJson(self::API.'/settings/work', ['daily_hours' => 7.50, 'starts_at' => '08:00'])->assertOk();
+        $this->putJson(self::API.'/settings/work', ['high_absence_rate' => 10.00, 'starts_at' => '08:00'])->assertOk();
         $this->putJson(self::API.'/settings/work', ['weekly_days_off' => [6, 5], 'work_days_per_week' => 5])->assertOk();
         $this->assertSame(3, AuditEvent::query()->where('event', 'settings.work_updated')->count());
     }

@@ -24,7 +24,7 @@ class AttendanceBatchTest extends TestCase
         $set = $this->actingAsStaff($entry)->postJson(self::API.'/records/attendance/batch', [
             'note' => 'دوام آذار — شعبة الميدان',
             'changes' => [$this->month($a->id, 20), $this->month($b->id, 18), $this->month($c->id, 12)],
-        ])->assertCreated()->assertJsonPath('data.items_count', 3)->assertJsonPath('data.status.value', 'pending')
+        ])->assertCreated()->assertJsonPath('data.items_count', 3)->assertJsonPath('data.status', 'pending')
             ->assertJsonPath('data.items.2.position', 3)->json('data.id');
 
         $this->assertSame(0, EmployeeAttendance::query()->count());
@@ -39,7 +39,7 @@ class AttendanceBatchTest extends TestCase
         $this->postJson(self::API.'/records/attendance/batch', ['changes' => [
             ['action' => 'update', 'record_id' => $records[$a->id], 'values' => ['attended_days' => 19]],
             ['action' => 'update', 'record_id' => $records[$b->id], 'values' => ['attended_days' => 17]],
-        ]])->assertCreated()->assertJsonPath('data.status.value', 'approved')->assertJsonPath('data.self_approved', true);
+        ]])->assertCreated()->assertJsonPath('data.status', 'approved')->assertJsonPath('data.self_approved', true);
         $this->assertSame(36, (int) EmployeeAttendance::query()->whereIn('employee_id', [$a->id, $b->id])->sum('attended_days'));
     }
 
@@ -93,7 +93,7 @@ class AttendanceBatchTest extends TestCase
 
         $this->postJson(self::API."/record-changes/{$set}/approve")->assertUnprocessable()
             ->assertJsonValidationErrors(['change_set' => __('records.change_stale', ['positions' => '2'])]);
-        $this->assertSame(20, EmployeeAttendance::query()->findOrFail($records[$a->id])->attended_days);
+        $this->assertSame(20.0, EmployeeAttendance::query()->findOrFail($records[$a->id])->attended_days);
     }
 
     public function test_a_batch_has_a_limit_and_removals_go_one_by_one(): void

@@ -20,7 +20,7 @@ class LookupListTest extends TestCase
 
     public function test_the_workbooks_lists_are_seeded_in_order_with_their_system_items(): void
     {
-        $this->assertCount(27, ListCatalogue::LISTS);
+        $this->assertCount(28, ListCatalogue::LISTS);
 
         foreach (ListCatalogue::keys() as $key) {
             $this->assertTrue(Schema::hasTable(ListCatalogue::table($key)), "the list {$key} has its own table");
@@ -36,7 +36,7 @@ class LookupListTest extends TestCase
 
         $this->assertSame('discharged', collect($response->json('data.items'))->firstWhere('label', 'مسرح')['code']);
         $this->getJson(self::API.'/settings/lists/job_title')->assertOk()->assertJsonCount(0, 'data.items');
-        $this->getJson(self::API.'/settings/lists')->assertOk()->assertJsonCount(27, 'data');
+        $this->getJson(self::API.'/settings/lists')->assertOk()->assertJsonCount(28, 'data');
         $this->getJson(self::API.'/settings/lists/no_such_list')->assertNotFound();
     }
 

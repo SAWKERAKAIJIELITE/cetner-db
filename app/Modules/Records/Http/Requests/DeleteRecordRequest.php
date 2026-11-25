@@ -10,7 +10,8 @@ class DeleteRecordRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'note' => ['required', 'string', 'min:3', 'max:1000'],
+            /** Why: 3 to 2,000 characters. */
+            'reason' => ['required', 'string', 'min:3', 'max:2000'],
         ];
     }
 }

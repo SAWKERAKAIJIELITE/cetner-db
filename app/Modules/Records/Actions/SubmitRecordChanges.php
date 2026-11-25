@@ -8,6 +8,7 @@ use App\Modules\Employees\Models\Employee;
 use App\Modules\Identity\Models\StaffUser;
 use App\Modules\Records\Enums\RecordAction;
 use App\Modules\Records\Enums\RecordType;
+use App\Modules\Records\Models\EmployeeDebt;
 use App\Modules\Records\Models\EmployeeRecord;
 use App\Modules\Records\Models\RecordChangeItem;
 use App\Modules\Records\Models\RecordChangeSet;
@@ -41,6 +42,10 @@ final class SubmitRecordChanges
         }
 
         foreach ($changes as $change) {
+            if ($change->action === RecordAction::Update && ! $type->correctable()) {
+                throw ValidationException::withMessages([$this->base($change) => __('records.payment_not_corrected')]);
+            }
+
             if (! $author->hasPermission($change->action->permission())) {
                 throw new AuthorizationException(__('records.not_allowed', ['action' => $change->action->label()]));
             }
@@ -92,8 +97,17 @@ final class SubmitRecordChanges
     {
         $ids = array_filter(array_map(fn (RecordChange $c) => $c->employeeId, $changes), fn ($id) => $id !== null && Str::isUuid($id));
         $ids = array_values(array_unique([...$ids, ...array_map(fn (EmployeeRecord $r) => $r->employee_id, $records)]));
+        $numbers = array_values(array_unique(array_filter(array_map(fn (RecordChange $c) => $c->personalNumber, $changes))));
 
-        return $ids === [] ? [] : Employee::query()->whereIn('id', $ids)->get(['id', 'file_status'])->keyBy('id')->all();
+        if ($ids === [] && $numbers === []) {
+            return [];
+        }
+
+        // By id, and by «الرقم الذاتي» (keyed `#number`), as the workbook names the employee of a row.
+        $found = Employee::query()->where(fn ($q) => $q->whereIn('id', $ids)->orWhereIn('personal_number', $numbers))
+            ->get(['id', 'file_status', 'personal_number']);
+
+        return $found->keyBy('id')->all() + $found->whereNotNull('personal_number')->keyBy(fn (Employee $e) => '#'.$e->personal_number)->all();
     }
 
     /**
@@ -108,10 +122,19 @@ final class SubmitRecordChanges
         $employeeKey = $at === 'values' ? 'employee_id' : $base.'.employee_id';
 
         if ($change->action === RecordAction::Create) {
-            $employee = $change->employeeId === null ? null : ($employees[$change->employeeId] ?? null);
+            $debt = $type === RecordType::Payments ? $this->debt($change->values['debt_id'] ?? null) : null;
+            $employee = match (true) {
+                $change->employeeId !== null => $employees[$change->employeeId] ?? null,
+                $change->personalNumber !== null => $employees['#'.$change->personalNumber] ?? null,
+                // A payment's employee is its debt's.
+                $debt !== null => Employee::query()->find($debt->employee_id, ['id', 'file_status', 'personal_number']),
+                default => null,
+            };
 
             if ($employee === null) {
-                throw ValidationException::withMessages([$employeeKey => __('records.employee_unknown')]);
+                throw ValidationException::withMessages([
+                    ($change->personalNumber !== null ? str_replace('employee_id', 'personal_number', $employeeKey) : $employeeKey) => __('records.employee_unknown'),
+                ]);
             }
 
             if (! $employee->isActive()) {
@@ -133,6 +156,10 @@ final class SubmitRecordChanges
             $values = RecordValues::validate($type, $change->values, $at);
             RecordValues::ensureConsistent($type, $values, $at);
 
+            if ($type === RecordType::Payments) {
+                $this->ensurePayable($debt, $employee, (float) $values['amount'], $at);
+            }
+
             return [
                 'position' => $position,
                 'action' => RecordAction::Create,
@@ -152,6 +179,10 @@ final class SubmitRecordChanges
         $current = RecordValues::of($record);
 
         if ($change->action === RecordAction::Delete) {
+            if ($type === RecordType::Debts && self::hasPayments($record->getKey())) {
+                throw ValidationException::withMessages([$base => __('records.debt_has_payments')]);
+            }
+
             return [
                 'position' => $position,
                 'action' => RecordAction::Delete,
@@ -183,7 +214,7 @@ final class SubmitRecordChanges
             throw ValidationException::withMessages([$at => __('records.nothing_changed')]);
         }
 
-        RecordValues::ensureConsistent($type, array_merge($current, $new), $at);
+        RecordValues::ensureConsistent($type, array_merge($current, $new), $at, (float) $record->getAttribute('payments_total'));
 
         return [
             'position' => $position,
@@ -258,6 +289,28 @@ final class SubmitRecordChanges
         }
 
         return $errors;
+    }
+
+    private function debt(mixed $id): ?EmployeeDebt
+    {
+        return is_string($id) && Str::isUuid($id) ? EmployeeDebt::query()->find($id) : null;
+    }
+
+    /** A payment is of a kept debt of the same employee, and pays at most what is left of it. */
+    private function ensurePayable(?EmployeeDebt $debt, Employee $employee, float $amount, string $at): void
+    {
+        if ($debt === null || $debt->isDeleted() || $debt->employee_id !== $employee->getKey()) {
+            throw ValidationException::withMessages([$at.'.debt_id' => __('records.debt_unknown')]);
+        }
+
+        if ($amount > (float) $debt->getAttribute('remaining_amount')) {
+            throw ValidationException::withMessages([$at.'.amount' => __('records.payment_over_remaining', ['remaining' => $debt->getAttribute('remaining_amount')])]);
+        }
+    }
+
+    public static function hasPayments(string $debtId): bool
+    {
+        return DB::table('employee_debt_payments')->where('debt_id', $debtId)->whereNull('deleted_at')->exists();
     }
 
     private function base(RecordChange $change): string

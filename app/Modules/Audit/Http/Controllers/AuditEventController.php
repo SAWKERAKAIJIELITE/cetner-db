@@ -39,7 +39,7 @@ class AuditEventController extends Controller
             ->when($filters['to'] ?? null, fn ($q, $to) => $q->where('created_at', '<', BusinessDay::bounds($to)[1]))
             ->orderByDesc('created_at')
             ->orderByDesc('id')
-            ->paginate((int) ($filters['per_page'] ?? 50));
+            ->paginate((int) ($filters['per_page'] ?? 50))->withQueryString();
 
         return AuditEventResource::collection($events);
     }

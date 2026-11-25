@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
 use Laravel\Sanctum\HasApiTokens;
 
@@ -32,6 +33,7 @@ class StaffUser extends Authenticatable
 {
     use HasApiTokens;
     use HasUuids;
+    use Notifiable;
 
     /** Caller-supplied columns only; activation and the role are set by Actions with forceFill (D-016). */
     protected $fillable = ['personal_number', 'username', 'first_name', 'last_name', 'password'];

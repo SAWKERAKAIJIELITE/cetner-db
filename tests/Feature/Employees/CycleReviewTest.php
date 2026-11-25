@@ -20,8 +20,8 @@ class CycleReviewTest extends TestCase
             ->assertJsonFragment(['code' => 'review_overdue']);
 
         $set = $this->postJson(self::API."/employees/{$employee->id}/reviews", ['cycle' => 'monthly', 'values' => ['residence_city' => 'دمشق']])
-            ->assertCreated()->assertJsonPath('data.kind.value', 'review')->assertJsonPath('data.period', '2026-11')
-            ->assertJsonPath('data.status.value', 'pending')->json('data.id');
+            ->assertCreated()->assertJsonPath('data.kind', 'review')->assertJsonPath('data.period', '2026-11')
+            ->assertJsonPath('data.status', 'pending')->json('data.id');
 
         $this->postJson(self::API."/employees/{$employee->id}/reviews", ['cycle' => 'monthly'])->assertUnprocessable()->assertJsonValidationErrors('cycle');
         $this->getJson(self::API."/employees/{$employee->id}")->assertJsonPath('data.reviews.monthly.overdue', true);
@@ -49,7 +49,7 @@ class CycleReviewTest extends TestCase
 
         // The supervisor confirms: applied at once, nothing changed.
         $this->postJson(self::API."/employees/{$employee->id}/reviews", ['cycle' => 'quarterly'])->assertCreated()
-            ->assertJsonPath('data.status.value', 'approved')->assertJsonCount(0, 'data.items');
+            ->assertJsonPath('data.status', 'approved')->assertJsonCount(0, 'data.items');
         $this->getJson(self::API."/employees/{$employee->id}")->assertJsonPath('data.reviews.quarterly.overdue', false);
     }
 

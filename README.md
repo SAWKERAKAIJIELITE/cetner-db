@@ -16,7 +16,7 @@ cp .env.example .env && php artisan key:generate
 psql -U postgres -c "CREATE DATABASE hr;" -c "CREATE DATABASE hr_test;"
 php artisan migrate --seed          # demo accounts: admin, supervisor, manager, entry, entry.two — password Password1!
 php artisan serve
-php artisan test                    # 138 tests on PostgreSQL
+php artisan test                    # 153 tests on PostgreSQL
 ```
 
 Log in like the desktop app will, with the reference client:
@@ -34,9 +34,9 @@ API documentation (local only): <http://127.0.0.1:8000/docs/api>.
 | Step | Builds |
 | ---- | ------ |
 | 1 ✓ | Foundation, staff identity and roles, device-bound login, access management, audit log |
-| 2 ✓ | Settings: 27 managed lists, the organisational structure, holidays, branch settings |
+| 2 ✓ | Settings: 27 managed lists (28 with the payment methods of 4.1), the organisational structure, holidays, branch settings |
 | 3 ✓ | Employees: the 159 workbook columns, review and history, the identity guard, cycles, completeness |
-| 4 | Records: movements, monthly attendance, conduct, debts |
+| 4 ✓ | Records: movements, monthly attendance, conduct, debts and their payments; notifications and the sidebar counts (4.1) |
 | 5 | Documents: the 13 attachments as uploaded files |
 | 6 | Views and reports: the per-person forms as PDF, the two dashboards, Excel exports |
 | 7 | Import of existing workbooks; on-premises deployment guide |

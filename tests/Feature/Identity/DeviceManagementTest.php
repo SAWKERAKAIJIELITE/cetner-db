@@ -72,7 +72,7 @@ class DeviceManagementTest extends TestCase
         $this->postJson(self::API."/devices/{$device->id}/approve", [
             'fingerprint' => strtolower(DeviceCrypto::displayFingerprint($device->fingerprint)),
             'staff_user_id' => $owner->id,
-        ])->assertOk()->assertJsonPath('data.status.value', 'approved')->assertJsonPath('data.owner.id', $owner->id)
+        ])->assertOk()->assertJsonPath('data.status', 'approved')->assertJsonPath('data.owner.id', $owner->id)
             ->assertJsonPath('data.approved_by.id', $admin->id);
 
         $this->assertDatabaseHas('audit_events', ['event' => 'device.approved', 'actor_id' => $admin->id]);
@@ -116,7 +116,7 @@ class DeviceManagementTest extends TestCase
         $admin = $this->admin();
 
         $this->actingAsStaff($admin)->postJson(self::API."/devices/{$device->id}/revoke", ['reason' => 'حاسوب مفقود'])
-            ->assertOk()->assertJsonPath('data.status.value', 'revoked')->assertJsonPath('data.revoke_reason', 'حاسوب مفقود');
+            ->assertOk()->assertJsonPath('data.status', 'revoked')->assertJsonPath('data.revoke_reason', 'حاسوب مفقود');
 
         $this->assertSame(0, AccessToken::query()->count());
         $this->assertDatabaseHas('audit_events', ['event' => 'device.revoked', 'actor_id' => $admin->id]);
@@ -133,7 +133,7 @@ class DeviceManagementTest extends TestCase
         $this->approvedDevice($this->staffUser(), 1);
 
         $this->actingAsStaff($this->admin())->getJson(self::API.'/devices?status=pending')->assertOk()
-            ->assertJsonCount(1, 'data')->assertJsonPath('data.0.status.value', 'pending');
+            ->assertJsonCount(1, 'data')->assertJsonPath('data.0.status', 'pending');
         $this->getJson(self::API.'/devices')->assertOk()->assertJsonCount(2, 'data');
     }
 

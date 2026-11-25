@@ -47,8 +47,9 @@ class StaffDeviceController extends Controller
         $devices = StaffDevice::query()
             ->with(['owner', 'approver', 'revoker'])
             ->when($request->validated('status'), fn ($q, $status) => $q->where('status', $status))
-            ->orderByDesc('created_at')
-            ->paginate((int) ($request->validated('per_page') ?? 25));
+            ->orderBy('created_at', $request->validated('direction') ?? 'desc')
+            ->orderBy('id')
+            ->paginate((int) ($request->validated('per_page') ?? 25))->withQueryString();
 
         return StaffDeviceResource::collection($devices);
     }

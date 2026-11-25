@@ -12,7 +12,10 @@ class DeviceIndexRequest extends FormRequest
     {
         return [
             'status' => ['nullable', Rule::enum(DeviceStatus::class)],
-            'per_page' => ['nullable', 'integer', 'between:10,100'],
+            /** By registration: desc (default) or asc. */
+            'direction' => ['nullable', 'in:asc,desc'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'between:5,100'],
         ];
     }
 }

@@ -80,16 +80,28 @@ final class RecordValues
 
     /**
      * The rules between fields, on the record as it would be: the approved values with the changes over them.
+     * `$paymentsTotal`: a debt's payments so far (D-045).
      *
      * @param  array<string, mixed>  $record  field => normal value
      */
-    public static function ensureConsistent(RecordType $type, array $record, string $prefix = 'values'): void
+    public static function ensureConsistent(RecordType $type, array $record, string $prefix = 'values', float $paymentsTotal = 0): void
     {
         $errors = [];
         $v = fn (string $key) => $record[$key] ?? null;
 
-        if ($type === RecordType::Movements && $v('starts_on') !== null && $v('ends_on') !== null && $v('ends_on') < $v('starts_on')) {
-            $errors[$prefix.'.ends_on'] = __('records.ends_before_start');
+        if ($type === RecordType::Movements) {
+            if (($v('starts_on') === null) !== ($v('ends_on') === null)) {
+                $errors[$prefix.'.'.($v('starts_on') === null ? 'starts_on' : 'ends_on')] = __('records.period_both_ends');
+            } elseif ($v('starts_on') !== null && $v('ends_on') < $v('starts_on')) {
+                $errors[$prefix.'.ends_on'] = __('records.ends_before_start');
+            } elseif ($v('starts_on') !== null && CarbonImmutable::parse($v('starts_on'))->diffInDays(CarbonImmutable::parse($v('ends_on'))) >= 400) {
+                $errors[$prefix.'.ends_on'] = __('records.period_too_long');
+            }
+
+            // A leave is a period: its days are counted from it (D-042, owner 25 Nov).
+            if ($v('movement_type_id') !== null && $v('starts_on') === null && LeaveTypes::isLeave((int) $v('movement_type_id'))) {
+                $errors[$prefix.'.starts_on'] = __('records.leave_needs_period');
+            }
         }
 
         if ($type === RecordType::Attendance && $v('planned_days') !== null) {
@@ -106,8 +118,11 @@ final class RecordValues
             }
         }
 
-        if ($type === RecordType::Debts && $v('paid_amount') !== null && $v('amount') !== null && (float) $v('paid_amount') > (float) $v('amount')) {
-            $errors[$prefix.'.paid_amount'] = __('records.paid_over_amount');
+        if ($type === RecordType::Debts && $v('amount') !== null && (float) ($v('paid_amount') ?? 0) + $paymentsTotal > (float) $v('amount')) {
+            // With payments, the debt's amount is what is too small; otherwise the amount paid when entered too big.
+            $errors[$prefix.'.'.($paymentsTotal > 0 ? 'amount' : 'paid_amount')] = $paymentsTotal > 0
+                ? __('records.debt_under_payments', ['paid' => number_format((float) ($v('paid_amount') ?? 0) + $paymentsTotal, 2, '.', '')])
+                : __('records.paid_over_amount');
         }
 
         if ($errors !== []) {
@@ -157,6 +172,8 @@ final class RecordValues
             'text', 'longtext' => [$required, 'string', 'max:'.$field['max']],
             'date' => [$required, 'date_format:Y-m-d', 'after_or_equal:1900-01-01', 'before_or_equal:2200-12-31'],
             'int' => [$required, 'integer', 'between:'.$field['min'].','.$field['max']],
+            'days' => [$required, 'numeric', 'decimal:0,1', 'between:'.$field['min'].','.$field['max']],
+            'debt' => [$required, 'uuid'],
             'decimal' => [$required, 'numeric', 'decimal:0,'.$field['scale'], 'between:'.$field['min'].','.$field['max']],
             'money' => [$required, 'numeric', 'decimal:0,2', ($field['positive'] ?? false) ? 'gt:0' : 'min:0', 'max:999999999999'],
             'list' => [$required, 'integer', 'min:1'],
@@ -171,6 +188,7 @@ final class RecordValues
 
         return match ($field['type']) {
             'int', 'list' => (int) $value,
+            'days' => (float) round((float) $value, 1),
             'money' => number_format((float) $value, 2, '.', ''),
             'decimal' => number_format((float) $value, $field['scale'], '.', ''),
             'date' => $value instanceof DateTimeInterface ? $value->format('Y-m-d') : substr((string) $value, 0, 10),

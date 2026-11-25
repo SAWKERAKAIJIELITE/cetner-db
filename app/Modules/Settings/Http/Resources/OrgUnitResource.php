@@ -17,7 +17,7 @@ class OrgUnitResource extends JsonResource
     public function toArray(Request $request): array
     {
         $row = $this->resource instanceof OrgUnit
-            ? OrgUnitTree::all(true)->firstWhere('id', $this->resource->id)
+            ? OrgUnitTree::all(true, withCounts: true)->firstWhere('id', $this->resource->id)
             : $this->resource;
 
         return [
@@ -32,6 +32,10 @@ class OrgUnitResource extends JsonResource
             /** The path as one line: «القيادة العامة / مديرية العمليات». */
             'path_label' => implode(' / ', $row->path),
             'archived' => $row->archived_at !== null,
+            /** «عدد الموظفين الفعّالين»: active employees of this unit and every unit under it. */
+            'active_employees' => (int) $row->active_employees,
+            /** Of this unit itself. */
+            'direct_active_employees' => (int) $row->direct_active_employees,
         ];
     }
 }

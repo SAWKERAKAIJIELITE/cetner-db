@@ -126,6 +126,7 @@ trait StaffTestHelpers
             'father_name' => 'محمد',
             'family_name' => 'الخطيب',
             'national_number' => (string) (10000000000 + ++self::$nationalCounter),
+            'personal_number' => (string) (500000 + self::$nationalCounter),
         ], $values), null, $this->admin());
 
         return Employee::query()->findOrFail($set->employee_id);

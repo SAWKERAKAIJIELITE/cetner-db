@@ -18,6 +18,9 @@ final class RecordLabels
     /** @var array<string, array<int, array{label: string, code: ?string}>> */
     private array $items = [];
 
+    /** @var array<string, string> debt id => how it reads */
+    private array $debts = [];
+
     /** @param iterable<array<string, mixed>|null> $valueSets field => value, of records of this kind */
     public function prime(RecordType $type, iterable $valueSets): self
     {
@@ -39,6 +42,24 @@ final class RecordLabels
 
         $this->wanted = [];
 
+        // A payment's debt: its creditor (or type) and amount.
+        if ($type === RecordType::Payments) {
+            $ids = [];
+
+            foreach ($valueSets as $values) {
+                if (($values['debt_id'] ?? null) !== null && ! isset($this->debts[$values['debt_id']])) {
+                    $ids[] = $values['debt_id'];
+                }
+            }
+
+            if ($ids !== []) {
+                foreach (DB::table('employee_debts AS d')->leftJoin('debt_types AS t', 't.id', '=', 'd.debt_type_id')
+                    ->whereIn('d.id', array_unique($ids))->get(['d.id', 'd.creditor', 't.label', 'd.amount']) as $debt) {
+                    $this->debts[$debt->id] = trim(($debt->creditor ?? $debt->label ?? 'دين').' ('.number_format((float) $debt->amount, 2, '.', '').')');
+                }
+            }
+        }
+
         return $this;
     }
 
@@ -50,7 +71,11 @@ final class RecordLabels
 
         $field = RecordCatalogue::field($type, $key);
 
-        return $field['type'] === 'list' ? ($this->items[$field['list']][(int) $value]['label'] ?? null) : (string) $value;
+        return match ($field['type']) {
+            'list' => $this->items[$field['list']][(int) $value]['label'] ?? null,
+            'debt' => $this->debts[$value] ?? null,
+            default => (string) $value,
+        };
     }
 
     /** @return array{id: int, label: ?string, code: ?string}|null */
