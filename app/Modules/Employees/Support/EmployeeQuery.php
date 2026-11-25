@@ -54,6 +54,13 @@ final class EmployeeQuery
                 ->where('employee_reviews.reviewed_on', '>=', $since));
         }
 
+        // «عليه ديون»: something left to pay in the debts record (D-044).
+        if (isset($f['has_debts'])) {
+            $debts = fn ($q) => $q->selectRaw('1')->from('employee_debts')->whereColumn('employee_debts.employee_id', 'employees.id')
+                ->whereNull('employee_debts.deleted_at')->where('employee_debts.remaining_amount', '>', 0);
+            $f['has_debts'] ? $query->whereExists($debts) : $query->whereNotExists($debts);
+        }
+
         if (isset($f['identity_locked'])) {
             $f['identity_locked'] ? $query->whereNotNull('identity_locked_at') : $query->whereNull('identity_locked_at');
         }

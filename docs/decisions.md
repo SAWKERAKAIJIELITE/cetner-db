@@ -300,7 +300,7 @@ Template at the end of this file.
   needs its own column); enums in code (a new item would need a release); free text per field (the workbook's way:
   typing variants split the dashboards' counts).
 - **Consequence:** the Step 2 migration `create_lookup_tables` was rewritten in place (no production installation
-  yet, section 11 of the code documentation): a development database is rebuilt with `php artisan migrate:fresh
+  yet, "Known limitations" in the code documentation): a development database is rebuilt with `php artisan migrate:fresh
   --seed`.
 
 ### D-025 System items carry a code
@@ -403,8 +403,29 @@ Template at the end of this file.
   | `GET /employee-changes` (the review queue) | 15 ms | 9 |
 
   The query count per page is fixed (labels resolved in bulk), so it does not grow with the page or the history.
-  Nothing calls for a cache, a read replica or partitioning at this size; the measurement is repeated when the
-  records of Step 4 are in.
+  Nothing calls for a cache, a read replica or partitioning at this size.
+
+- **Measured again with the records** (Step 4, `records:generate-demo --years=3` on the same files: 144,000 months
+  of attendance, 72,000 movements, 12,000 conduct records, 1,225 debts, 72,488 record change sets, 216,000 change
+  items; the database 349 MB in all):
+
+  | Request | Median | Queries |
+  | ------- | -----: | ------: |
+  | `GET /records/attendance?year&month` (25 of 4,000) | 22 ms | 12 |
+  | the same, 100 a page | 37 ms | 12 |
+  | `GET /records/attendance?year&high_absence=1` | 35 ms | 12 |
+  | `GET /records/movements?year` | 33 ms | 13 |
+  | `GET /records/movements?employee_id` | 14 ms | 13 |
+  | `GET /records/debts?debt_status=overdue` | 18 ms | 12 |
+  | `GET /records/attendance/{id}` | 10 ms | 11 |
+  | `GET /employees/{id}/records/summary?year` | 24 ms | 24 |
+  | `GET /record-changes` (the queue) | 13 ms | 7 |
+  | `GET /employees?has_debts=1` | 58 ms | 14 |
+  | `GET /employees/{id}` (with its debt columns) | 17 ms | 17 |
+
+  Three years of records take about 186 MB with their indexes (the change items 95 MB, the attendance 33 MB, the
+  movements 20 MB, the sets 15 MB): about 62 MB a year, so with the file's history about 117 MB a year for 4,000
+  people. Still nothing calls for a cache or partitioning.
 
 ---
 
@@ -577,6 +598,101 @@ Template at the end of this file.
 
 ---
 
+## 6. The records (Step 4)
+
+### D-040 The four records are four tables, written only by approved changes, never deleted
+
+- **Status:** Accepted
+- **Context:** «سجل الحركات» (4,000 rows), «سجل الدوام الشهري» (6,000), «سجل السلوك الوظيفي» (3,000), «سجل الديون»
+  (2,000): rows typed by الرقم الذاتي, with the name, unit and job title looked up, a year, month, row number and key
+  column for the sheets' formulas.
+- **Decision:**
+  - **One table per record**, with the workbook's columns typed (`employee_movements`, `employee_attendance`,
+    `employee_conduct_records`, `employee_debts`); the list columns are the lists' ids (`movement_type`,
+    `conduct_type`, `conduct_status`, `debt_type`). The employee is a foreign key; the name, unit and title are the
+    file's, shown beside the record, not copied. The year, month, row number and key columns were the sheets'
+    machinery and are gone (the year and month of a dated record are computed).
+  - **Written only by an approved change** (D-041). The record's id is chosen when the change is sent, so the history
+    names it before it exists; the author is `created_by`, the reviewer `approved_by`.
+  - **Never deleted**: «حذف سجل أُدخل خطأً» (`records.delete`) marks the record (`deleted_at`, `deleted_by`) and the
+    change that removed it keeps it as it was. A trigger refuses DELETE and TRUNCATE, any change to a removed
+    record, and changing whose record it is or who entered it. Removed records drop out of the lists and every count;
+    `?deleted=1` lists them.
+  - **The database checks the workbook's rules again** (D-042).
+- **Rejected:** one generic "records" table with a JSON body (no foreign keys to the lists, no checks, slow sums);
+  deleting a record entered by mistake (the owner: the history is kept for good, D-039).
+
+### D-041 A record change is reviewed like a change of the file; a batch is approved whole
+
+- **Status:** Accepted
+- **Decision:**
+  - **The same rules as the file (D-023, D-033).** Data entry adds, corrects and removes (`records.create`,
+    `.update`, `.delete`); each waits for a reviewer. The supervisor corrects (`records.update`) and it applies at
+    once, logged as self-approved; the supervisor neither adds nor removes (OD-9) but approves data entry's additions
+    and removals, since approving is reviewing, not entering (OD-17). The administrator does everything at once.
+    Nobody approves their own; a refusal needs a reason; the author withdraws.
+  - **`record_change_sets` and `record_change_items`**: a set is one kind of record and one or more changes; each
+    item is an addition (its values), a correction (the approved values beside the new ones, changed fields only) or
+    a removal (the record as it was, with the reason as the set's note). Append-only, decided once (triggers).
+  - **Pending beside the approved value**: a record shows the changes waiting for it; a pending addition is in the
+    review queue, not in the record, so no count includes what nobody approved.
+  - **Stale is refused**: a record corrected or removed since a change was sent, or an employee whose file is no longer
+    approved, refuses the set; it is sent again against the values as they are.
+  - **Batches** (`POST /records/{type}/batch`, at most 500 changes, `HR_RECORDS_BATCH_LIMIT`): a unit's month of
+    attendance is one submission, reviewed and approved in one decision instead of hundreds. It is checked whole:
+    every error of every change comes back together (`changes.3.values.attended_days`) and nothing is kept unless all
+    are right; approved all or none. Removals go one by one, each with its reason.
+  - **Only approved files take records** (an employee waiting for approval has no records yet). Files of people who
+    left (discharged, retired) still take records: a discharge is itself a movement, a debt outlives the job.
+- **Rejected:** approving changes of a batch one by one (500 decisions for one month); records outside review
+  (the owner: the supervisor reviews anything, OD-8).
+
+### D-042 Each record's rules and computed columns, as the workbook's
+
+- **Status:** Accepted
+- **Decision:**
+  - **Movements**: date and type required; «إلى تاريخ» not before «من تاريخ»; amount and course marks ≥ 0; days a whole
+    number (entered, as in the workbook). Year and month computed.
+  - **Attendance**: year, month, planned and attended days required; attended ≤ planned (the workbook's check);
+    planned ≤ the month's days; one month per employee (a partial unique index, checked against the queue too). The
+    month is fixed once entered (a trigger): a wrong month is removed and entered again, so a month never moves onto
+    another. **Absent days** are generated by the database (planned − attended); **absence rate** = absent ÷ planned
+    (0 when nothing was planned); a month at 20% or more is flagged (`high_absence`, the workbook's colour).
+  - **Conduct**: date and type required; the decision, its number, date and status («حالة المعالجة») optional; the
+    document link a text until Step 5 brings uploaded documents.
+  - **Debts**: the amount required, > 0; paid ≤ amount; **what is left** generated by the database (amount − paid);
+    **status** computed when read: paid (nothing left), late (its due date passed), outstanding.
+  - Values in one normal form, as for the file (Arabic digits, "1500" = "1500.00", empty = null).
+
+### D-043 The month's planned days are suggested from the days off and the holidays
+
+- **Status:** Accepted (D-027 promised it)
+- **Decision:** the branch settings gain **«أيام العطلة الأسبوعية»** (`weekly_days_off`, ISO weekdays, Friday and
+  Saturday by default; as many as 7 − «أيام العمل», a CHECK). `GET /records/attendance/planned-days?year&month`
+  returns the month's working days less the holidays falling on a working day, each date once even where holidays
+  overlap. A suggestion for the entry form; the planned days are still entered (a unit may work on a holiday).
+- **Assumed:** Friday and Saturday (OD-18).
+
+### D-044 The status report's year and the file's debt columns are computed when read
+
+- **Status:** Accepted
+- **Decision:**
+  - `GET /employees/{id}/records/summary?year` gives «مؤشرات السنة المختارة» with the workbook's formulas: leaves (a
+    movement whose type begins with «إجازة», any spelling, so a leave type added later counts, as in the workbook),
+    their days and the balance (`annual_leave_days` less every leave day, sick leave included, as the workbook counts
+    it: OD-19), courses, rewards and deductions, the attendance sums and rate, complaints, warnings, punishments and
+    thanks, the debts (all of them, not the year's: open, late, what is left); and the report's lists: the last ten
+    movements, the last five conduct records, the last month. Newest by date, then by entry (the workbook: by entry).
+  - Courses, rewards, deductions and the four conduct counts find their list items by **code** (`course`, `reward`,
+    `deduction`, `complaint`, `warning`, `punishment`, `thanks`), so renaming the item changes nothing; those items
+    are system items (D-025).
+  - **The file's «عليه ديون» and «إجمالي الديون المتبقية»** are computed from the debts when read (`computed.has_debts`,
+    `computed.total_remaining` on the file, `debts_remaining` and `?has_debts=` on the list): never stored, so they
+    cannot drift from the record.
+- **Rejected:** storing the year's indicators on the file (they change with every record and with the calendar).
+
+---
+
 ## Open questions
 
 | ID | Question | Status |
@@ -596,6 +712,9 @@ Template at the end of this file.
 | OD-14 | The identity lock: can a wrong locked value be corrected? | **Answered** (24 Nov): no. Six fields, locked once the administrator approves them, changed by nobody; the administrator checks them before approving (D-034). |
 | OD-15 | The workbook's «جهة العمل الحالية - مستوى تنظيمي 2 / 3» (AV, AW): the unit someone actually works in when it differs from their own? | **Assumed:** yes, one optional `current_work_unit_id` (D-032). |
 | OD-16 | What must a new file have? | **Assumed:** the three names only; the rest may come later and shows as missing (D-032). |
+| OD-17 | The supervisor does not add or remove records: may they approve data entry's additions and removals? | **Assumed:** yes, approving is reviewing (D-041). |
+| OD-18 | The weekly days off. | **Assumed:** Friday and Saturday; editable in the branch settings (D-043). |
+| OD-19 | «رصيد الإجازات المتبقي»: does sick or emergency leave come out of the annual balance? | **Assumed:** yes, every leave, as the workbook counts it (D-044). |
 | OD-12 | Scale and performance (owner's questions, 23 Nov): cache, distributed database, history. | **Answered in D-031.** |
 
 ---

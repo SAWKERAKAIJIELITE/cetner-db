@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'unknown_fields' => 'Unknown fields for this record: :fields.',
+    'list_item_unavailable' => 'The value chosen for ":field" is not available in its list.',
+    'ends_before_start' => 'The end date is before the start date.',
+    'attended_over_planned' => 'The attended days cannot exceed the planned days.',
+    'planned_over_month' => 'The planned days cannot exceed the days of the month (:days).',
+    'paid_over_amount' => 'The amount paid cannot exceed the debt.',
+    'nothing_to_change' => 'Nothing to send.',
+    'nothing_changed' => 'The values sent are the approved ones: nothing changes.',
+    'batch_too_large' => 'One submission carries at most :max records; split it.',
+    'not_allowed' => 'You may not ":action".',
+    'employee_unknown' => 'The employee does not exist.',
+    'employee_not_active' => 'The employee\'s file is :status: records are entered for approved files only.',
+    'record_unknown' => 'The record does not exist or was removed.',
+    'record_twice' => 'The same record is changed twice in this submission.',
+    'field_fixed' => '":field" is not changed once entered: remove the record and enter it again.',
+    'attendance_twice_in_batch' => 'The attendance of :month for this employee is twice in this submission.',
+    'attendance_exists' => 'The attendance of :month for this employee is already entered: correct it instead.',
+    'attendance_waiting' => 'The attendance of :month for this employee is waiting for review in another submission.',
+    'change_stale' => 'The records (:positions) changed or were removed since this was sent, or their employee\'s file is no longer approved: the submission is refused and sent again after checking the current values.',
+    'own_change' => 'Nobody approves what they sent themselves.',
+    'withdraw_own_only' => 'Only its author withdraws a submission.',
+    'not_pending' => 'This submission is :status: no new decision is taken on it.',
+];

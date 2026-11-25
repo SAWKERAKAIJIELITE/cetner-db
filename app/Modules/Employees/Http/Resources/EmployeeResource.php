@@ -13,6 +13,7 @@ use App\Modules\Employees\Support\IdentityLock;
 use App\Modules\Employees\Support\ReviewStatus;
 use App\Modules\Employees\Support\ValueLabels;
 use App\Modules\Identity\Http\Resources\StaffUserSummaryResource;
+use App\Modules\Records\Support\DebtTotals;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -86,6 +87,8 @@ class EmployeeResource extends JsonResource
                 'contract_days_left' => EmployeeComputed::contractDaysLeft($this->resource),
                 'org_unit_path' => $labels->unitPath($this->org_unit_id),
                 'current_work_unit_path' => $labels->unitPath($this->current_work_unit_id ?? $this->org_unit_id),
+                /** «عليه ديون» and «إجمالي الديون المتبقية», from the debts record (D-044). */
+                ...DebtTotals::of($this->id),
             ],
             'completeness' => (float) $this->completeness,
             /** Counted fields still empty, by cycle. */

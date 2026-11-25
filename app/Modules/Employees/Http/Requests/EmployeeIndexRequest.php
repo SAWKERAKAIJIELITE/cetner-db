@@ -27,6 +27,8 @@ class EmployeeIndexRequest extends FormRequest
             'completeness_below' => ['nullable', 'numeric', 'between:0,100'],
             /** Locked (1) or not yet (0): the administrator's list of identities to confirm. */
             'identity_locked' => ['nullable', 'boolean'],
+            /** «عليه ديون»: with something left to pay in the debts record. */
+            'has_debts' => ['nullable', 'boolean'],
             /** Files with a change waiting for review. */
             'has_pending' => ['nullable', 'boolean'],
             'sort' => ['nullable', 'in:name,completeness,contract_ends_on,created_at'],

@@ -21,6 +21,7 @@ use App\Modules\Employees\Support\FieldCatalogue;
 use App\Modules\Employees\Support\ReviewStatus;
 use App\Modules\Employees\Support\ValueLabels;
 use App\Modules\Identity\Http\Resources\StaffUserSummaryResource;
+use App\Modules\Records\Support\DebtTotals;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -40,6 +41,7 @@ class EmployeeController extends Controller
             ->whereIn('employee_id', $ids)->where('status', ChangeSetStatus::Pending->value)
             ->groupBy('employee_id')->selectRaw('employee_id, count(*) as pending')
             ->pluck('pending', 'employee_id')->map(fn ($n) => (int) $n)->all();
+        EmployeeSummaryResource::$debts = DebtTotals::remaining($ids);
 
         return EmployeeSummaryResource::collection($page);
     }

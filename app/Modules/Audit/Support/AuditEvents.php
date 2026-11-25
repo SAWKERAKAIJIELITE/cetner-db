@@ -40,6 +40,10 @@ final class AuditEvents
         'employees.identity_locked' => 'تثبيت هوية موظف (لا تُعدّل بعدها)',
         'employees.identity_check_failed' => 'تحقق البصمة: هوية مثبتة تغيّرت خارج النظام',
         'employees.field_definition_updated' => 'تعديل تعريف حقل في دليل الحقول',
+        'records.change_submitted' => 'إرسال إضافة أو تصحيح أو حذف في السجلات',
+        'records.change_approved' => 'اعتماد إضافة أو تصحيح أو حذف في السجلات',
+        'records.change_rejected' => 'ردّ إضافة أو تصحيح أو حذف في السجلات',
+        'records.change_withdrawn' => 'سحب إضافة أو تصحيح أو حذف في السجلات',
     ];
 
     public static function label(string $event): string

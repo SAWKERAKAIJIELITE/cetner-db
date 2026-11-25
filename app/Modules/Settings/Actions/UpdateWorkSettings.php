@@ -14,6 +14,10 @@ final class UpdateWorkSettings
     {
         return DB::transaction(function () use ($data, $actor) {
             $settings = WorkSettings::query()->lockForUpdate()->findOrFail(1);
+            if (isset($data['weekly_days_off'])) {
+                $data['weekly_days_off'] = collect($data['weekly_days_off'])->map(fn ($d) => (int) $d)->unique()->sort()->values()->all();
+            }
+
             $settings->fill(array_intersect_key($data, array_flip(WorkSettings::EDITABLE)));
 
             $changes = [];
@@ -42,6 +46,12 @@ final class UpdateWorkSettings
 
     private function same(string $field, mixed $before, mixed $after): bool
     {
+        if ($field === 'weekly_days_off') {
+            $sorted = fn ($days) => collect(is_string($days) ? json_decode($days, true) : $days)->map(fn ($d) => (int) $d)->sort()->values()->all();
+
+            return $sorted($before) === $sorted($after);
+        }
+
         if (in_array($field, ['starts_at', 'ends_at'], true)) {
             return substr((string) $before, 0, 5) === substr((string) $after, 0, 5);
         }

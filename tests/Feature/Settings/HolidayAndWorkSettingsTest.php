@@ -60,6 +60,7 @@ class HolidayAndWorkSettingsTest extends TestCase
             'ends_at' => '16:00',
             'late_after_minutes' => 10,
             'work_days_per_week' => 5,
+            'weekly_days_off' => [5, 6],
             'currency' => 'ل.س',
             'annual_leave_days' => 21,
             'review_windows' => ['monthly' => 35, 'quarterly' => 100, 'semi_annual' => 190, 'annual' => 370],
@@ -85,9 +86,19 @@ class HolidayAndWorkSettingsTest extends TestCase
         $this->putJson(self::API.'/settings/work', ['work_days_per_week' => 8, 'daily_hours' => 0, 'starts_at' => '8am'])->assertUnprocessable()
             ->assertJsonValidationErrors(['work_days_per_week', 'daily_hours', 'starts_at']);
 
+        // The days off follow the working days: changed together, as many as the week has without work.
+        $this->putJson(self::API.'/settings/work', ['work_days_per_week' => 6])->assertUnprocessable()
+            ->assertJsonPath('errors.weekly_days_off.0', __('settings.days_off_count', ['count' => 1]));
+        $this->putJson(self::API.'/settings/work', ['weekly_days_off' => [5, 5]])->assertUnprocessable()->assertJsonValidationErrors('weekly_days_off.1');
+        $this->putJson(self::API.'/settings/work', ['work_days_per_week' => 6, 'weekly_days_off' => [5]])->assertOk()
+            ->assertJsonPath('data.weekly_days_off', [5]);
+        $this->putJson(self::API.'/settings/work', ['work_days_per_week' => 5, 'weekly_days_off' => [6, 5]])->assertOk()
+            ->assertJsonPath('data.weekly_days_off', [5, 6]);
+
         // Sending the same values changes nothing and records nothing.
         $this->putJson(self::API.'/settings/work', ['daily_hours' => 7.50, 'starts_at' => '08:00'])->assertOk();
-        $this->assertSame(1, AuditEvent::query()->where('event', 'settings.work_updated')->count());
+        $this->putJson(self::API.'/settings/work', ['weekly_days_off' => [6, 5], 'work_days_per_week' => 5])->assertOk();
+        $this->assertSame(3, AuditEvent::query()->where('event', 'settings.work_updated')->count());
     }
 
     public function test_only_settings_managers_change_the_branch_settings(): void

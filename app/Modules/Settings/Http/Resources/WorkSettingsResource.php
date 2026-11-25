@@ -21,6 +21,8 @@ class WorkSettingsResource extends JsonResource
             'ends_at' => substr((string) $this->ends_at, 0, 5),
             'late_after_minutes' => $this->late_after_minutes,
             'work_days_per_week' => $this->work_days_per_week,
+            /** ISO weekdays: 1 Monday … 5 Friday, 6 Saturday, 7 Sunday. */
+            'weekly_days_off' => array_map('intval', $this->weekly_days_off),
             'currency' => $this->currency,
             'annual_leave_days' => $this->annual_leave_days,
             /** Days a review of each cycle stays valid. */

@@ -1,7 +1,8 @@
 # HR Backend: Technical Documentation (نظام إدارة القوى البشرية)
 
-Status: **Step 3** (Step 1: foundation, staff identity and roles, device-bound login, access and user management,
-audit log; Step 2: settings; Step 3: the employee's file with review, history, identity guard and cycles).
+Status: **Step 4** (Step 1: foundation, staff identity and roles, device-bound login, access and user management,
+audit log; Step 2: settings; Step 3: the employee's file with review, history, identity lock and cycles; Step 4: the
+four records with their review and the status report's year).
 Updated at the end of every step.
 
 Audience: developers joining or reviewing the backend.
@@ -30,7 +31,7 @@ desktop app only (React + Electron, OD-3) and log in from approved devices (D-01
 | 1 | Audit | Done | `audit_events`, append-only, written with each action; read API |
 | 2 | Settings | Done | «الإعدادات»: 27 managed lists (yes/no and the update cycle are not lists), the six-level organisational structure, holidays, the branch settings with the four review windows |
 | 3 | Employees | Done | «قاعدة بيانات الموظفين» and «دليل الحقول»: the 159 fields with the sheet's checks, field definitions per update cycle, completeness and missing fields, review periods per cycle, change history, the supervisor's review (D-023, OD-8) |
-| 4 | Records | Planned | «سجل الحركات», «سجل الدوام الشهري», «سجل السلوك الوظيفي», «سجل الديون» |
+| 4 | Records | Done | «سجل الحركات», «سجل الدوام الشهري», «سجل السلوك الوظيفي», «سجل الديون» with the same review, batches for a month's attendance, the status report's year («مؤشرات السنة»), the file's debt columns |
 | 5 | Documents | Planned | The 13 attachments (photo, ID, family statement, certificate, …) as uploaded files instead of links |
 | 6 | Views and reports | Planned | «عرض الفرد» and the three forms as PDF, «داش بورد الموظفين», «داش بورد الحركات», Excel exports |
 | 7 | Import and deployment | Planned | Importing existing workbooks (staged, reviewed, all-or-nothing); the on-premises deployment guide |
@@ -132,7 +133,7 @@ app/
     │   └── routes.php
     ├── Settings/
     │   ├── Actions/        ManageListItems, ManageOrgUnits, ManageHolidays, UpdateWorkSettings
-    │   ├── Database/       Migrations (3), Seeders (SettingsSeeder, DevSettingsSeeder)
+    │   ├── Database/       Migrations (4), Seeders (SettingsSeeder, DevSettingsSeeder)
     │   ├── Http/           Controllers (LookupList, OrgUnit, Holiday, WorkSettings), Requests, Resources
     │   ├── Models/         ListItem (one model for the 27 list tables), OrgUnit, Holiday, WorkSettings
     │   ├── Support/        ListCatalogue (each list's key, table, label, the workbook's items, system codes),
@@ -149,6 +150,17 @@ app/
     │   ├── Support/        FieldCatalogue (the 125 fields), FieldDefinitions, FieldValues (normal forms, rules),
     │   │                   ReviewRights, EmployeeDerived, EmployeeComputed, EmployeeWarnings, ReviewStatus,
     │   │                   EmployeeQuery, ValueLabels
+    │   └── routes.php
+    ├── Records/
+    │   ├── Actions/        SubmitRecordChanges (one or a batch), ApplyRecordChangeSet, DecideRecordChangeSet
+    │   ├── Console/        GenerateDemoRecordsCommand (records:generate-demo, development only)
+    │   ├── Database/       Migrations (1)
+    │   ├── Enums/          RecordType, RecordAction, DebtStatus
+    │   ├── Http/           Controllers (Record, RecordChange, EmployeeRecords), Requests, Resources
+    │   ├── Models/         EmployeeRecord (base), EmployeeMovement, EmployeeAttendance, EmployeeConductRecord,
+    │   │                   EmployeeDebt, RecordChangeSet, RecordChangeItem
+    │   ├── Support/        RecordCatalogue (each record's columns), RecordValues, RecordComputed, RecordLabels,
+    │   │                   RecordPage, RecordSummary, DebtTotals, PlannedDays, RecordChange
     │   └── routes.php
     └── Audit/
         ├── Database/Migrations (1)
@@ -479,8 +491,8 @@ The 27 lists, with the fields that use them:
 | `external_entity_type` | `external_entity_types` | نوع الجهة الأخرى | نوع الجهة الأخرى | |
 | `external_link_type` | `external_link_types` | نوع الارتباط | نوع الارتباط | |
 | `external_schedule` | `external_schedules` | نظام الدوام بالجهة الأخرى | نظام الدوام بالجهة الأخرى | |
-| `movement_type` | `movement_types` | نوع الحركة | سجل الحركات | `reward`, `deduction` |
-| `conduct_type` | `conduct_types` | نوع السجل السلوكي | سجل السلوك الوظيفي | |
+| `movement_type` | `movement_types` | نوع الحركة | سجل الحركات | `reward`, `deduction`, `course` (دورة تدريبية) |
+| `conduct_type` | `conduct_types` | نوع السجل السلوكي | سجل السلوك الوظيفي | `complaint` (شكوى), `warning` (إنذار), `punishment` (عقوبة), `thanks` (شكر وتقدير) |
 | `conduct_status` | `conduct_statuses` | حالة المعالجة | سجل السلوك الوظيفي | |
 | `debt_type` | `debt_types` | نوع الدين | سجل الديون | |
 | `work_nature` | `work_natures` | طبيعة العمل | طبيعة العمل | |
@@ -520,6 +532,7 @@ archived once its children are; restored under an active parent; never moved (D-
 | `starts_at`, `ends_at` | بداية الدوام، نهاية الدوام | 08:00, 16:00 | end after start |
 | `late_after_minutes` | التأخير (دقيقة) | 10 | 0 to 240 |
 | `work_days_per_week` | أيام العمل | 5 | 1 to 7 |
+| `weekly_days_off` | (new) أيام العطلة الأسبوعية | `[5, 6]` (Friday, Saturday) | ISO weekdays, distinct, 7 − `work_days_per_week` of them; changed together with it (D-043) |
 | `currency` | العملة | ل.س | not blank |
 | `annual_leave_days` | رصيد الإجازات | 21 | 0 to 365 |
 | `review_window_monthly` … `_annual` | مهلة المراجعة | 35, 100, 190, 370 | > 0, growing, ≤ 1000 |
@@ -685,10 +698,107 @@ include `storage/logs` in the backups. A failed login is one `staff_login_failed
 monthly and quarterly confirmations, a change every month and a queue of 200 pending sets, in bulk SQL (about 30
 seconds). The timings are in D-031.
 
-## 11. Testing
+## 11. Records module (Step 4)
+
+`app/Modules/Records`: the four records of the workbook (D-040), their changes and review (D-041), their rules and
+computed columns (D-042), the planned days (D-043) and the status report's year (D-044).
+
+### 11.1 Tables
+
+Each record: `id` (uuid, chosen when the change is sent), `employee_id`, its columns, `notes`, `created_by` (the
+author of the addition), `approved_by`, `deleted_at` and `deleted_by` (both or neither), timestamps. Trigger
+`records_guard`: no DELETE, no change to a removed record, `id`, `employee_id`, `created_by`, `approved_by` and
+`created_at` fixed; no TRUNCATE.
+
+| Table | Workbook | Columns | Checks |
+| ----- | -------- | ------- | ------ |
+| `employee_movements` | سجل الحركات | `occurred_on`, `movement_type_id`, `description`, `identified_by` (المعرف بها), `entity`, `course_mark`, `amount`, `starts_on`, `ends_on`, `days`, `status` (الحالة, text) | range in order; days 0–3660; amount ≥ 0; marks 0–1000 |
+| `employee_attendance` | سجل الدوام الشهري | `year`, `month`, `planned_days`, `attended_days`, `absent_days` (generated), `exceptional_skills` | year 2000–2100, month 1–12; planned ≤ the month's days; attended ≤ planned; one per employee and month among kept rows (partial unique index); the month fixed (trigger) |
+| `employee_conduct_records` | سجل السلوك الوظيفي | `occurred_on`, `conduct_type_id`, `subject`, `reported_by`, `decision`, `decision_number`, `decision_on`, `conduct_status_id`, `document_link` | |
+| `employee_debts` | سجل الديون | `creditor`, `debt_type_id`, `reason`, `incurred_on`, `amount`, `paid_amount`, `monthly_installment`, `due_on`, `remaining_amount` (generated) | amount > 0; paid between 0 and the amount; installment ≥ 0 |
+
+**`record_change_sets`**: `id`, `record_type` (movements, attendance, conduct, debts), `status`, `items_count`,
+`note` (the reason, for a removal), `submitted_by`, `submitted_at`, `self_approved`, `reviewed_by`, `reviewed_at`,
+`review_note`. The same CHECKs and triggers as the file's change sets (decided once, reason for a refusal, never
+deleted).
+
+**`record_change_items`**: `change_set_id`, `position` (1…), `action` (create: `new_values` only; update: both, the
+changed fields; delete: `old_values`, the whole record), `record_id`, `employee_id`, `old_values`, `new_values`
+(jsonb, the normal form). Unique per set by position and by record; indexed by record, employee and, for additions,
+the attendance month. Append-only.
+
+### 11.2 Fields
+
+`RecordCatalogue` holds each record's columns with the workbook's labels and their type (date, text, longtext,
+int, decimal, money, list), `required` on adding and `fixed` (set once: the attendance's year and month).
+`GET /records/{type}/fields` serves it for the forms. `RecordValues` normalises and checks values as `FieldValues`
+does for the file and checks the rules between fields on the record as it would be. `RecordComputed` gives the
+formula columns: a dated record's year and month; a month's absent days, rate and `high_absence` (≥
+`hr.high_absence_rate`, 0.2); a debt's remaining amount and status (paid, overdue, outstanding, as of today in
+Damascus).
+
+### 11.3 Rules
+
+| Who | Adds | Corrects | Removes | Approves, refuses |
+| --- | ---- | -------- | ------- | ----------------- |
+| Data entry | waits | waits | waits (reason required) | no |
+| Supervisor | no | at once | no | yes, not their own |
+| General manager | no | no | no | no |
+| Administrator | at once | at once | at once | yes, not their own |
+
+- Only real changes are kept; nothing changed → 422. A fixed field changed → 422.
+- Only approved files take records; the employee's file may be of someone who left.
+- A month of attendance once per employee: refused when approved, waiting in another submission, or twice in a batch.
+- A batch (`POST /records/{type}/batch`, ≤ `HR_RECORDS_BATCH_LIMIT`, 500): additions and corrections of one kind;
+  every error of every change at once under `changes.{i}`; kept whole or not at all; approved whole.
+- Approval refuses a stale set (a record corrected or removed since, a file no longer approved) → 422 naming the
+  positions; the rules between fields are checked again on the record as it is.
+- A removed record is in no list, count or total; `?deleted=1` lists them.
+
+### 11.4 API reference
+
+| Method | Path | Permission | Notes |
+| ------ | ---- | ---------- | ----- |
+| GET | `/records/{type}/fields` | `records.view` | The columns for the form |
+| GET | `/records/{type}` | `records.view` | Filters: `employee_id`, `personal_number`, `year`, `month`, `type_id` (the record's list), `debt_status`, `high_absence`, `deleted`, `per_page`; newest first; each record with `employee` (number, name, unit, title), `fields` (label, value, display), `computed`, `pending` |
+| GET | `/records/{type}/{id}` | `records.view` | Removed ones too |
+| GET | `/records/{type}/{id}/history` | `records.view` | Every approved change, oldest first |
+| POST | `/records/{type}` | `records.create` | `employee_id`, `values`, `note`; 201 with the set |
+| PATCH | `/records/{type}/{id}` | `records.update` | `values`, `note`; 201 with the set |
+| DELETE | `/records/{type}/{id}` | `records.delete` | `note` (the reason) required; 201 with the set |
+| POST | `/records/{type}/batch` | `records.create` for additions, `.update` for corrections | `changes: [{action, employee_id or record_id, values}]`, `note` |
+| GET | `/record-changes` | `records.view` | The queue: `status` (pending by default), `record_type`, `employee_id`, `mine`; without the items |
+| GET | `/record-changes/{id}` | `records.view` | With every item: approved and proposed values and their display |
+| POST | `/record-changes/{id}/approve` | `entries.review` | `note` optional; not one's own |
+| POST | `/record-changes/{id}/reject` | `entries.review` | `note` (reason) required |
+| POST | `/record-changes/{id}/withdraw` | the author | |
+| GET | `/records/attendance/planned-days?year&month` | `records.view` | The month's suggestion (D-043) |
+| GET | `/employees/{id}/records/summary?year` | `records.view` | The status report's year and latest records (D-044) |
+
+`{type}` is `movements`, `attendance`, `conduct` or `debts`. The file (`GET /employees/{id}`) gains
+`computed.has_debts` and `computed.total_remaining`; the list gains `debts_remaining` and the `has_debts` filter.
+
+### 11.5 Audit events
+
+| Event | Label | Context |
+| ----- | ----- | ------- |
+| `records.change_submitted` | إرسال إضافة أو تصحيح أو حذف في السجلات | the kind, the set, the count of each action, the employees, whether applied at once |
+| `records.change_approved` | اعتماد إضافة أو تصحيح أو حذف في السجلات | the kind, the set, self-approved |
+| `records.change_rejected` | ردّ إضافة أو تصحيح أو حذف في السجلات | the kind, the set, the reason |
+| `records.change_withdrawn` | سحب إضافة أو تصحيح أو حذف في السجلات | the kind, the set |
+
+The values are in the change items only (D-039).
+
+### 11.6 Measuring
+
+`php artisan records:generate-demo --years=3` (development only, after `employees:generate-demo`) adds three years
+of records with their change history (the attendance as a unit's month, 500 files a submission) in bulk SQL, about
+three minutes. The timings are in D-031.
+
+## 12. Testing
 
 `php artisan test` (PostgreSQL database `hr_test`, `RefreshDatabase`, the catalogues seeded through
-`DatabaseSeeder` for every test): **117 tests**. Fixed device keys in `tests/Support/TestDeviceKeys.php` (D-020); helpers in
+`DatabaseSeeder` for every test): **138 tests**. Fixed device keys in `tests/Support/TestDeviceKeys.php` (D-020); helpers in
 `tests/Support/StaffTestHelpers.php` (`staffUser($role)`, `admin()`, `pendingDevice()`, `approvedDevice()`,
 `loginThrough()` (challenge and signed login through the API), `actingAsStaff()`).
 
@@ -703,11 +813,15 @@ seconds). The timings are in D-031.
 | `Feature/RequestConventionsTest` | Arabic 401, 403, 404 and 429 (with `Retry-After`), Arabic validation messages, all without `\u` escapes; the database session in UTC |
 | `Feature/Settings/LookupListTest` | The 27 lists, each in its own table, seeded in order with their system codes; the same word in two lists is two rows; everybody reads, the supervisor and the administrator change; added at the end and audited; duplicates by search key (and per list); rename and move; archive, restore (archived duplicate restored, not added); system items renamed, never archived (API and the table's CHECK); an id of another list or an unknown list is 404; reorder all active items; the seeder keeps the managers' changes and restores a missing code |
 | `Feature/Settings/OrgUnitTest` | Six levels with paths and the seventh refused; sibling names unique, cousins free; archive after the children, restore under an active parent; rename; the database trigger (level, root, archive with children, move); data entry reads only |
-| `Feature/Settings/HolidayAndWorkSettingsTest` | Days with both ends, by year; correct and delete (204); ends before start and longer than a year refused; the workbook's branch settings from the start; changes with their rules, each change audited, the same value recording nothing; only settings managers change |
+| `Feature/Settings/HolidayAndWorkSettingsTest` | Days with both ends, by year; correct and delete (204); ends before start and longer than a year refused; the workbook's branch settings from the start (Friday and Saturday off); changes with their rules (the days off follow the working days, no day twice), each change audited, the same value recording nothing; only settings managers change |
 | `Feature/Employees/EmployeeReviewFlowTest` | Data entry adds: an empty pending file with the values beside it, out of the lists, approved by the supervisor; the administrator adds at once, the supervisor and the general manager cannot add; a change beside the approved value until approved, then history; the supervisor's update at once and logged; refusal needs a reason, withdrawal is the author's; data entry does not approve, nobody approves their own; a stale set is refused; values checked with Arabic field names (dates, ranges, phone, archived and unknown items, unknown fields, contract order, nothing changed); unique national number in the file and in the queue; names required; the history cannot be rewritten (items, decided sets); the general manager reads only |
 | `Feature/Employees/IdentityLockTest` | A locked identity changed by nobody (every role, three fields); the database refuses it, never unlocks, never touches the fingerprint, other fields stay changeable; an empty identity field filled once by the administrator's approval (fingerprint renewed, intact), then locked; the supervisor's approval does not lock, approving an identity change does; the lock action is the administrator's, once; a change waiting when the identity is locked is refused at approval; the administrator approving a new file locks it; the fingerprint catches a change made around the trigger (`employees:verify-identity` fails, audit event); the fingerprint is keyed and does not reveal the number |
 | `Feature/Employees/CycleReviewTest` | Confirmed once per period, counts when approved (due date, history); without changes and only the cycle's fields; overdue again after the window (and the list filter); the four periods |
 | `Feature/Employees/EmployeeFileTest` | The guide (125 fields, sections, cycles, lists, 67 counted, 10 identity); completeness and missing by cycle follow the definitions (settings managers only); age, service years, contract days left for today in Damascus; the workbook's warnings; list search (spellings, Arabic digits, numbers), unit and sub-units, contract, completeness, pending, sort; a unit with people is not archived; the definitions' flags survive reseeding |
+| `Feature/Records/RecordReviewFlowTest` | Data entry adds: nothing in the record until approved, the id chosen at submission, author and approver kept, audit; a correction waits beside the approved value, the supervisor's applies at once, the history; the supervisor neither adds nor removes (also in a batch), the general manager reads only; a removal needs a reason, marks the record, lists it with `deleted=1`; the database refuses deleting a record, changing a removed one and rewriting the history; nobody approves their own, a refusal needs a reason, the author withdraws; a stale correction is refused; the queue by employee and kind |
+| `Feature/Records/RecordRulesTest` | Each kind's columns for the form; required, typed and listed values with Arabic labels, one normal form (Arabic digits, decimals, spaces), unknown fields, archived items, a range in order; only approved files; attendance: attended ≤ planned, planned ≤ the month, the month fixed, nothing changed, one month once, absence computed and flagged, the database's checks; debts: amount > 0, paid ≤ amount (on correction too), what is left and the status, the file's debt columns and the list filter; a conduct record with its decision |
+| `Feature/Records/AttendanceBatchTest` | A month for three files sent, approved together; the supervisor's batch of corrections at once; every error of a batch reported together and nothing kept; a month twice in a batch, or waiting elsewhere; one stale change refuses the whole batch; the batch limit; no removals in a batch; the planned days from the days off and overlapping holidays, each date once |
+| `Feature/Records/RecordSummaryTest` | The year's leaves (any «إجازة», a new leave type and a spelling without the hamza, the balance), courses, rewards and deductions by code (renamed items too), attendance sums and rate, conduct counts by code, debts open, late and left; the latest movements, conduct and month; another year; an employee with nothing; a removed debt counts for nothing |
 | `Unit/ArabicTextTest`, `Unit/BusinessDayTest` | Digits, search key; the next Damascus midnight, a day's UTC bounds |
 
 API documentation check: `php artisan scramble:analyze` must report no warnings. Code style: `./vendor/bin/pint`.
@@ -715,11 +829,13 @@ API documentation check: `php artisan scramble:analyze` must report no warnings.
 The whole login was also run over HTTP with `tools/device-client.mjs` against `php artisan serve`: registration,
 console approval, signed login, a call with the token, the audit log.
 
-## 12. Known limitations and pending work
+## 13. Known limitations and pending work
 
 - The employees, their records, documents, views and import come in Steps 3 to 7 (section 2).
-- The records (movements, attendance, conduct, debts) and their review come in Step 4; the debts columns of the file
-  with them. The 13 documents (5 of them counted for completeness) in Step 5.
+- The 13 documents (5 of them counted for completeness) come in Step 5; until then a conduct record's document is a
+  link (text). The status report, the dashboards and the exports read the records in Step 6.
+- Assumed until the owner says otherwise: the supervisor approves data entry's additions and removals of records
+  (OD-17), Friday and Saturday off (OD-18), every leave out of the annual balance (OD-19).
 - A wrong value in a locked identity cannot be corrected in the application, by the owner's decision (D-034): the
   administrator checks it before approving.
 - Assumed until the owner says otherwise: the current work unit (OD-15), the three names as the minimum of a new
@@ -732,7 +848,7 @@ console approval, signed login, a call with the token, the audit log.
 - Migrations may still change in place until the first production installation; from then on they are append-only
   (recruitment D-101).
 
-## 13. Changelog
+## 14. Changelog
 
 | Step | Summary |
 | ---- | ------- |
@@ -742,3 +858,4 @@ console approval, signed login, a call with the token, the audit log.
 | 2.2 | The managed lists moved from one pair of tables to **one table per list** (27 tables, plain foreign keys, the recruitment system's way; D-024), with shared code (`ListCatalogue`, `ListItem`, `ManagedList`) and the same API; `LookupList` and `LookupItem` removed. The supervisor's own update takes effect at once and is logged (OD-11, D-023). Development continues from the owner's repository. 85 tests |
 | 3 | The employee's file: 125 typed input fields from «دليل الحقول» with 41 database checks, field definitions as data (D-032); every entry a change set, pending beside the approved value, reviewers applying at once, stale sets refused, the approved items as append-only history (D-033); the identity guard: two identity fields per change at most, identity changes approved by `identity.review` only (D-034); completeness and search key stored, age and service computed (D-035); cycle confirmations per period with overdue (D-036); the workbook's warnings (D-037); `fled` and `retired` codes; a unit with people is not archived; `employees:generate-demo` and the measurements (D-031). Also the Step 2.2 leftovers: `LookupList` and `LookupItem` removed, the Step 2.2 documentation. 113 tests |
 | 3.1 | The identity limit replaced by the **identity lock** (owner, 24 Nov): six identity fields (الرقم الذاتي، الرقم الوطني، الاسم، الأب، الأم، العائلة); locked when the administrator approves them; then changed by nobody, enforced by a trigger; empty ones filled once (D-034). The keyed identity fingerprint and its nightly check (D-038). History and logs: the record and the application log kept for good, only changes stored, measured at 55 MB a year for 4,000 files; expired challenges and tokens pruned; a failed login logged with the device, the username and the address (D-039). No correction after the lock (OD-14 answered). 117 tests |
+| 4 | The records: «سجل الحركات», «سجل الدوام الشهري», «سجل السلوك الوظيفي», «سجل الديون» as four typed tables, written only by approved changes, never deleted (D-040); their changes reviewed like the file's, batches of up to 500 for a month's attendance, approved whole, stale sets refused (D-041); the workbook's checks and formula columns, in the API and the database (D-042); the weekly days off and the month's planned days suggested (D-043); the status report's year and the file's debt columns, computed (D-044); `course` and four conduct codes; `records:generate-demo` and the measurements (D-031). 138 tests |

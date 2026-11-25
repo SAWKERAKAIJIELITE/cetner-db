@@ -17,4 +17,5 @@ return [
     'holiday_too_long' => 'A holiday is at most a year long.',
     'work_ends_before_start' => 'The working day must end after it starts.',
     'review_windows_order' => 'The review windows grow: quarterly at least monthly, semi-annual at least quarterly, annual at least semi-annual.',
+    'days_off_count' => 'The weekly days off must be :count, by the working days of the week.',
 ];

@@ -23,6 +23,9 @@ class EmployeeSummaryResource extends JsonResource
     /** @var array<string, int> */
     public static array $pending = [];
 
+    /** @var array<string, string> employee id => what is left of their debts */
+    public static array $debts = [];
+
     public function toArray(Request $request): array
     {
         $labels = self::$labels ??= new ValueLabels;
@@ -45,6 +48,8 @@ class EmployeeSummaryResource extends JsonResource
             /** @var list<string> */
             'overdue_cycles' => array_keys(array_filter($reviews, fn ($r) => $r['overdue'])),
             'pending_changes' => self::$pending[$this->id] ?? 0,
+            /** «إجمالي الديون المتبقية»: 0.00 when nothing is owed (D-044). */
+            'debts_remaining' => self::$debts[$this->id] ?? '0.00',
         ];
     }
 }
