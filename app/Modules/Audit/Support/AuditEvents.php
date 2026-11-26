@@ -50,6 +50,8 @@ final class AuditEvents
         'documents.withdrawn' => 'سحب وثيقة مرفوعة',
         'documents.removed' => 'إزالة وثيقة حالية من ملف موظف',
         'documents.downloaded' => 'تنزيل وثيقة أو عرضها',
+        'reports.form_printed' => 'طباعة استمارة موظف (PDF)',
+        'exports.downloaded' => 'تصدير بيانات إلى Excel',
     ];
 
     public static function label(string $event): string

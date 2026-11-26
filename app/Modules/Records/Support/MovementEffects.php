@@ -130,8 +130,15 @@ final class MovementEffects
         ]));
     }
 
+    /** @var array<int, ?string> a system item's code never changes (D-025): read once per type */
+    private static array $codes = [];
+
     private static function code(int $movementTypeId): ?string
     {
-        return DB::table('movement_types')->where('id', $movementTypeId)->value('code');
+        if (! array_key_exists($movementTypeId, self::$codes)) {
+            self::$codes[$movementTypeId] = DB::table('movement_types')->where('id', $movementTypeId)->value('code');
+        }
+
+        return self::$codes[$movementTypeId];
     }
 }

@@ -859,6 +859,76 @@ Template at the end of this file.
   the browser's type or the name's extension; versions edited in place (the history would be lost); deleting a
   refused file's row (the log would point at nothing).
 
+## 8. Views and reports (Step 6)
+
+### D-050 The three printed sheets of an employee, on the screen and as a PDF from the server
+
+- **Status:** Accepted (owner, 26 Nov: «go on» to Step 6; the frontend's requirements §5.3)
+- **Context:** the workbook prints «استمارة المعلومات الأساسية», «استمارة المعلومات التفصيلية» and «تقرير الحالة
+  الوظيفية» for the employee chosen in «عرض الفرد», each on A4. The design's employee file has one print button.
+- **Decision:**
+  - **The workbook's layout as data** (`FormCatalogue`): each form's sections and rows in the workbook's order. A row
+    is a field of the file or a computed row: «الاسم الثلاثي», «العمر», «سنوات الخدمة», «المتبقي على انتهاء العقد»,
+    the six levels of the unit, «عليه ديون» and what is left, the 13 attachments and their count, completeness, the
+    missing fields by cycle, the four last reviews. The status report adds the chosen year's figures (D-044) and the
+    last 10 movements, the last 5 conduct records and the latest month of attendance.
+  - **One content, two outputs:** `GET /employees/{id}/forms/{form}` gives the rows as people read them (list labels,
+    نعم / لا, amounts with separators, dates) for the screen; `…/pdf` renders the same content as an A4 PDF on the
+    server (mPDF, right to left, DejaVu Sans), with the branch's name at the top and, on every page, who printed it
+    and when. The approved values only: a change waiting for review is not printed.
+  - **«عرض الفرد»** is the employee file itself (`GET /employees/{id}`): its card is the banner, its buttons are the
+    three forms.
+  - **Who:** `employees.view`, as the frontend's §7 says (data entry prints too). Approved files only. Every PDF is
+    in the log (`reports.form_printed`); the screen's JSON is not, as reading the file is not.
+  - «جهة العمل الحالية - مستوى تنظيمي 2 / 3» print as the one «جهة العمل الحالية (إن اختلفت)» (OD-15).
+- **Rejected:** printing from the desktop app only (each workstation's fonts and printer settings would change the
+  page; a PDF from the server is the same everywhere and can be kept); a template engine (the three forms are tables
+  of rows; a small renderer keeps them in one place).
+
+### D-051 The dashboards: the workbook's figures, computed in SQL when asked
+
+- **Status:** Accepted (owner, 26 Nov; OD-26: no period filter on the main dashboard, no «complete» attendance)
+- **Decision:**
+  - **«لوحة التحكم»** (the design's dashboard; the workbook's home tiles): «إجمالي الأفراد», «الموظفين الفعالين»,
+    «متوسط إكتمال البيانات», «متأخرو التحديث الشهري», «العقود المنتهية خلال 30 يوم», «موظفون لديهم ديون»; each job
+    status with its count and share; the contracts as «سارية» (more than 30 days left), «خلال 30 يوم», «منتهية» and
+    without an end date; the counted fields most often missing. Filter: «جهة العمل» with its sub-units only.
+    Its two lists, paged: contracts ending soon (soonest first) and files behind on a cycle (the longest unreviewed
+    first, with each cycle's last review).
+  - **«داش بورد الموظفين»:** the workbook's twelve groups within its six filters («المرحلة التنظيمية», «المستوى
+    التنظيمي», «حالة الموظف», «الحالة الوظيفية», «الجنس», «نوع الدوام») and the unit. Where the workbook gives a tile
+    to one list item («متعاقد دوام», «متزوج», «دكتوراه» …), every item of that list gets a tile, found by id and named
+    as it is now: a renamed item keeps its tile and an added one appears. «مطلق/أرمل» is therefore two tiles.
+    «طالب حالياً» is any «الدراسة الحالية» but «لا» (its code), not a label beginning with «طالب».
+  - **«داش بورد الحركات»:** a year (required), a month and an employee (optional), as the workbook: the general
+    figures (no period), each leave type, rewards and deductions, the administrative movements, conduct and
+    attendance for the period; the chosen employee's; and «ملخص جميع الموظفين», one row per file with its figures,
+    the year's leave balance (internal and external leave, D-044) and «تقييم» from the net. Types are found by code.
+  - **Shape:** groups of tiles `{key, label, value, format, item}`; `format` is count, percent (0–100), money (a
+    string with two decimals), years or days; `item` is the list item a tile counts, `{id, name_ar, archived}`.
+  - **Counted:** approved files and kept records only; a waiting addition counts nowhere (D-041).
+  - **Cost:** one aggregate query over the filtered files with the debts, the attachments and the last reviews
+    joined as grouped subqueries, and one grouped query per list; 0.06 to 0.3 seconds on 4,000 files and 48,000
+    movements.
+  - **Who:** `reports.view` (the supervisor, the general manager, the administrator; OD-5).
+- **Rejected:** tiles for the workbook's item texts (a renamed item would count nothing); stored counters (they drift,
+  and the queries are fast enough).
+
+### D-052 Excel exports, written while they are sent, and logged
+
+- **Decision:**
+  - **What:** the employees (`/exports/employees`, the list's filters and order: every field in the guide's order as
+    people read it, then the formulas, the last reviews and «تاريخ التقديم»), each register (`/exports/records/{type}`,
+    the register's filters: waiting additions marked «قيد التدقيق») and «ملخص جميع الموظفين».
+  - **How:** OpenSpout writes the .xlsx to the response as the rows come, 500 or 1,000 at a time, so memory stays flat
+    (4,000 files in about 3 seconds; 48,000 movements in 12). One sheet, right to left, a bold frozen header. Text is
+    always written as text: a value beginning with «=» is never a formula.
+  - **Who:** `reports.view` («عرض لوحات القيادة والتقارير وتصديرها») and the permission to read what is exported
+    (`employees.view` or `records.view`). Each export is in the log (`exports.downloaded`) with its kind, its filters
+    and its number of rows.
+- **Rejected:** building the file in memory (PhpSpreadsheet: a large register would not fit); CSV (Arabic and dates
+  open badly in Excel without settings).
+
 ---
 
 ## Open questions
