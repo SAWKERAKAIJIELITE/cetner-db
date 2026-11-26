@@ -29,6 +29,15 @@ final class FieldDefinitions
         return self::all()->filter(fn (FieldDefinition $d) => $d->cycle === $cycle)->keys()->values()->all();
     }
 
+    /** @return Collection<string, FieldDefinition> the file's own fields, without the documents (D-049) */
+    public static function fields(): Collection
+    {
+        return self::all()->reject(fn (FieldDefinition $d) => $d->type === self::DOCUMENT);
+    }
+
+    /** The type of the 13 attachments' definitions. */
+    public const DOCUMENT = 'document';
+
     /** @return list<string> the fields that count for completeness */
     public static function counted(): array
     {

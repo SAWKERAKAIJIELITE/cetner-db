@@ -14,14 +14,15 @@ class FieldDefinitionResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        $field = FieldCatalogue::get($this->key);
+        // The 13 attachments (D-049) are definitions without a catalogue field.
+        $field = FieldCatalogue::has($this->key) ? FieldCatalogue::get($this->key) : [];
 
         return [
             'key' => $this->key,
             'label' => $this->label_ar,
             'section' => $this->section_ar,
             'workbook_column' => $this->workbook_column,
-            /** text, longtext, name, code, digits, phone, email, date, year, rate, int, decimal, money, bool, list, org_unit */
+            /** text, longtext, name, code, digits, phone, email, date, year, rate, int, decimal, money, bool, list, org_unit; `document` for an attachment (filled when a current approved file of that kind is attached). */
             'type' => $this->type,
             /** For a list field: the list's key (GET /settings/lists/{key}). */
             'list' => $this->list_key,

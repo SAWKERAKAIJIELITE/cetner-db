@@ -38,6 +38,16 @@ return [
             'report' => false,
         ],
 
+        // The employees' documents (D-049): private, outside the web root, never served but by the API.
+        'documents' => [
+            'driver' => 'local',
+            'root' => storage_path('app/documents'),
+            'visibility' => 'private',
+            'serve' => false,
+            'throw' => true,
+            'report' => false,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),

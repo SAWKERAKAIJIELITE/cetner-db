@@ -2,6 +2,7 @@
 
 namespace App\Modules\Notifications\Support;
 
+use App\Modules\Documents\Support\DocumentQueries;
 use App\Modules\Employees\Enums\ChangeSetStatus;
 use App\Modules\Employees\Enums\Cycle;
 use App\Modules\Identity\Models\StaffUser;
@@ -15,7 +16,7 @@ final class Badges
     /**
      * @return array{
      *     notifications: array{unread: int},
-     *     reviews: array{employee_changes: int, record_changes: int, total: int}|null,
+     *     reviews: array{employee_changes: int, record_changes: int, documents: int, total: int}|null,
      *     identity: array{to_review: int, to_lock: int}|null,
      *     mine: array{pending: int},
      *     employees: array{contracts_ending_soon: int, monthly_overdue: int}|null
@@ -31,7 +32,8 @@ final class Badges
             ->when(! $user->hasPermission('identity.review'), fn ($q) => $q->where('needs_identity_review', false))->count();
         $recordChanges = fn () => (int) DB::table('record_change_sets')->where('status', $pending)->where('submitted_by', '!=', $user->id)->count();
         $reviews = $user->hasPermission('entries.review')
-            ? ['employee_changes' => $e = $employeeChanges(), 'record_changes' => $r = $recordChanges(), 'total' => $e + $r]
+            ? ['employee_changes' => $e = $employeeChanges(), 'record_changes' => $r = $recordChanges(),
+                'documents' => $d = DocumentQueries::pendingFor($user->id), 'total' => $e + $r + $d]
             : null;
 
         $identity = $user->hasPermission('identity.review') ? [
@@ -42,7 +44,8 @@ final class Badges
         ] : null;
 
         $mine = (int) DB::table('employee_change_sets')->where('status', $pending)->where('submitted_by', $user->id)->count()
-            + (int) DB::table('record_change_sets')->where('status', $pending)->where('submitted_by', $user->id)->count();
+            + (int) DB::table('record_change_sets')->where('status', $pending)->where('submitted_by', $user->id)->count()
+            + DocumentQueries::pendingBy($user->id);
 
         // The same reading as the register's `overdue_cycle=monthly` filter.
         $since = $today->subDays((int) WorkSettings::current()->getAttribute(Cycle::Monthly->windowColumn()))->format('Y-m-d');

@@ -2,6 +2,7 @@
 
 namespace App\Modules\Employees\Support;
 
+use App\Modules\Documents\Support\DocumentQueries;
 use App\Modules\Employees\Enums\Cycle;
 use App\Modules\Employees\Models\Employee;
 use App\Support\ArabicText;
@@ -41,9 +42,14 @@ final class EmployeeDerived
 
         $missing = [];
         $filled = 0;
+        $definitions = FieldDefinitions::all();
+        $attached = self::attachedKinds($employee, $counted);
 
         foreach ($counted as $key) {
-            $value = $employee->getAttribute($key);
+            // An attachment (D-049) is filled when a current approved file of its kind is attached.
+            $value = $definitions[$key]->type === FieldDefinitions::DOCUMENT
+                ? (in_array($key, $attached, true) ? true : null)
+                : $employee->getAttribute($key);
 
             if ($value === null || $value === '') {
                 $missing[FieldDefinitions::all()[$key]->cycle->value][] = $key;
@@ -77,7 +83,7 @@ final class EmployeeDerived
     /** The second organisational level, counted apart as in the workbook. */
     public const SECOND_LEVEL = 'org_unit_level_2';
 
-    /** How many counted fields: the counted definitions, the unit counting twice (the workbook's 73 in Step 5). */
+    /** How many counted fields: the counted definitions (the five counted attachments too), the unit counting twice (the workbook's 73). */
     public static function countedTotal(): int
     {
         $counted = FieldDefinitions::counted();
@@ -89,6 +95,23 @@ final class EmployeeDerived
     public static function label(string $key): string
     {
         return $key === self::SECOND_LEVEL ? 'المستوى التنظيمي الثاني' : FieldDefinitions::all()[$key]->label_ar;
+    }
+
+    /**
+     * The kinds of the employee's current approved files, read only when an attachment counts.
+     *
+     * @param  list<string>  $counted
+     * @return list<string>
+     */
+    private static function attachedKinds(Employee $employee, array $counted): array
+    {
+        $documents = FieldDefinitions::all()->only($counted)->filter(fn ($d) => $d->type === FieldDefinitions::DOCUMENT);
+
+        if ($documents->isEmpty() || ! $employee->exists) {
+            return [];
+        }
+
+        return DocumentQueries::currentKinds($employee->getKey());
     }
 
     private static function unitLevel(int $id): int

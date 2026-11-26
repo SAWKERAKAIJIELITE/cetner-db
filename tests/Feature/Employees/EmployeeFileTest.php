@@ -20,7 +20,7 @@ class EmployeeFileTest extends TestCase
     {
         $this->assertCount(125, FieldCatalogue::FIELDS);
 
-        $response = $this->actingAsStaff($this->staffUser())->getJson(self::API.'/field-definitions')->assertOk()->assertJsonCount(125, 'data');
+        $response = $this->actingAsStaff($this->staffUser())->getJson(self::API.'/field-definitions')->assertOk()->assertJsonCount(138, 'data');
         $fields = collect($response->json('data'))->keyBy('key');
 
         $this->assertSame('personal', 'personal'); // sections are Arabic labels:
@@ -30,22 +30,29 @@ class EmployeeFileTest extends TestCase
         $this->assertTrue($fields['national_number']['identity']);
         $this->assertSame('blood_type', $fields['blood_type_id']['list']);
         $this->assertSame('semi_annual', $fields['contract_ends_on']['cycle']);
-        $this->assertSame(67, $fields->where('counts_for_completeness', true)->count());
+        // 67 fields and 5 of the 13 attachments (D-049), the documents last, of type `document`.
+        $this->assertSame(72, $fields->where('counts_for_completeness', true)->count());
+        $this->assertSame(13, $fields->where('type', 'document')->count());
+        $this->assertSame(['identity_copy', 'security_form', 'portrait', 'family_statement', 'practical_certificate'],
+            $fields->where('type', 'document')->where('counts_for_completeness', true)->keys()->all());
+        $this->assertSame('الوثائق والمرفقات', $fields['portrait']['section']);
+        $this->assertSame('EI', $fields['portrait']['workbook_column']);
+        $this->assertSame('sham_cash_copy', $fields->keys()->last());
         $this->assertSame(['personal_number', 'first_name', 'father_name', 'family_name', 'mother_name', 'national_number'], $fields->where('identity', true)->keys()->all());
         $this->assertFalse($fields['birth_date']['identity']);
     }
 
     public function test_completeness_and_missing_fields_by_cycle_follow_the_definitions(): void
     {
-        // Five counted fields filled (the number and four names) of 68: the 67 definitions, the unit counting as
-        // the workbook's levels 1 and 2 (73 with the five documents of Step 5).
+        // Five counted fields filled (the number and four names) of the workbook's 73: the 67 fields, the unit
+        // counting as levels 1 and 2, and the five counted documents (D-049).
         $employee = $this->employeeFile();
-        $this->assertSame(round(5 * 100 / 68, 2), (float) $employee->completeness);
+        $this->assertSame(round(5 * 100 / 73, 2), (float) $employee->completeness);
         $this->assertContains('phone', $employee->missing_fields['quarterly']);
         $this->assertContains('org_unit_level_2', $employee->missing_fields['monthly']);
 
         $this->actingAsStaff($this->staffUser())->getJson(self::API."/employees/{$employee->id}")
-            ->assertJsonPath('data.completeness_filled', 5)->assertJsonPath('data.completeness_counted', 68)
+            ->assertJsonPath('data.completeness_filled', 5)->assertJsonPath('data.completeness_counted', 73)
             ->assertJsonFragment(['key' => 'org_unit_level_2', 'label' => 'المستوى التنظيمي الثاني']);
 
         // A unit at level 2 fills both levels.
@@ -53,9 +60,9 @@ class EmployeeFileTest extends TestCase
         $top = $this->postJson(self::API.'/settings/org-units', ['name_ar' => 'القيادة'])->json('data.id');
         $second = $this->postJson(self::API.'/settings/org-units', ['name_ar' => 'مديرية', 'parent_id' => $top])->json('data.id');
         $placed = $this->employeeFile(['org_unit_id' => $second]);
-        $this->assertSame(round(7 * 100 / 68, 2), (float) $placed->completeness);
+        $this->assertSame(round(7 * 100 / 73, 2), (float) $placed->completeness);
         $atTop = $this->employeeFile(['org_unit_id' => $top]);
-        $this->assertSame(round(6 * 100 / 68, 2), (float) $atTop->completeness);
+        $this->assertSame(round(6 * 100 / 73, 2), (float) $atTop->completeness);
 
         $this->actingAsStaff($this->staffUser())->putJson(self::API.'/field-definitions/phone', ['counts_for_completeness' => false])->assertForbidden();
 
@@ -63,7 +70,7 @@ class EmployeeFileTest extends TestCase
             ->assertJsonPath('data.counts_for_completeness', false);
 
         $employee->refresh();
-        $this->assertSame(round(5 * 100 / 67, 2), (float) $employee->completeness);
+        $this->assertSame(round(5 * 100 / 72, 2), (float) $employee->completeness);
         $this->assertNotContains('phone', $employee->missing_fields['quarterly']);
 
         $this->putJson(self::API.'/field-definitions/residence_city', ['cycle' => 'quarterly'])->assertOk();

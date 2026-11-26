@@ -4,6 +4,7 @@ namespace App\Modules\Records\Http\Resources;
 
 use App\Modules\Employees\Support\ValueLabels;
 use App\Modules\Identity\Http\Resources\StaffUserSummaryResource;
+use App\Modules\Records\Enums\RecordType;
 use App\Modules\Records\Models\EmployeeRecord;
 use App\Modules\Records\Support\RecordCatalogue;
 use App\Modules\Records\Support\RecordComputed;
@@ -26,6 +27,9 @@ class RecordResource extends JsonResource
 
     /** @var array<string, list<array<string, mixed>>> record id => its pending changes */
     public static array $pending = [];
+
+    /** @var array<string, array{current: array<string, mixed>|null, pending: int}> conduct record id => its document (D-049) */
+    public static array $documents = [];
 
     public function toArray(Request $request): array
     {
@@ -72,6 +76,13 @@ class RecordResource extends JsonResource
             'updated_at' => $this->updated_at->toIso8601String(),
             /** Changes sent for this record and not decided yet: the approved value stays until one is approved. */
             'pending' => self::$pending[$this->id] ?? [],
+            /**
+             * A conduct record's document (D-049): the current one (or null) and how many wait for review. Upload with
+             * POST /employees/{id}/documents, kind `conduct_document`. Absent from the other records.
+             *
+             * @var array{current: array{id: string, original_name: string, mime: string, size_bytes: int, uploaded_at: string}|null, pending: int}
+             */
+            'document' => $this->when($type === RecordType::Conduct, fn () => self::$documents[$this->id] ?? ['current' => null, 'pending' => 0]),
         ];
     }
 }

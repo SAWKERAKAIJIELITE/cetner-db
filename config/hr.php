@@ -11,4 +11,9 @@ return [
     // The records (Step 4): the most changes one submission carries (a unit's month of attendance). The absence
     // rate that flags a month is a branch setting (work_settings.high_absence_rate).
     'records_batch_limit' => (int) env('HR_RECORDS_BATCH_LIMIT', 500),
+
+    // The documents (Step 5): where they are kept (a private disk: never served directly) and the most a file
+    // weighs, in kilobytes (the design's 5 MB).
+    'documents_disk' => env('HR_DOCUMENTS_DISK', 'documents'),
+    'documents_max_kb' => (int) env('HR_DOCUMENTS_MAX_KB', 5120),
 ];
