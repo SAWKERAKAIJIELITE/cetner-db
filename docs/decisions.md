@@ -889,7 +889,8 @@ Template at the end of this file.
 | OD-23 | Do movements change the file (frontend Q-11)? | **Answered** (25 Nov): yes (D-048). |
 | OD-24 | «تاريخ التقديم» on the file's banner (frontend Q-12). | **Answered** (25 Nov): the day the file was approved (`application_date`). |
 | OD-25 | «صلة السكن بجهة الطوارئ» in the design, not in the workbook (frontend Q-13). | **Answered** (26 Nov): not added. |
-| OD-26 | What the dashboard's period filters (frontend Q-14); what makes the attendance «complete» (Q-16); which data an import brings (Q-17). | **Open**, for Steps 6 and 7. |
+| OD-26 | What the dashboard's period filters (frontend Q-14); what makes the attendance «complete» (Q-16). | **Answered** (26 Nov): neither is built: the dashboards have no period filter of that kind and nothing marks a month's attendance «complete». |
+| OD-27 | Which data an import brings (frontend Q-17): the employees' files only, or the four registers too? | **Open**, for Step 7. |
 | OD-12 | Scale and performance (owner's questions, 23 Nov): cache, distributed database, history. | **Answered in D-031.** |
 
 ---

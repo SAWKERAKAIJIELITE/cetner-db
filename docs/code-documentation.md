@@ -883,6 +883,8 @@ Any signed-in active staff user; nobody sees another's.
 - The content is on the `documents` disk (`config/filesystems.php`: `storage/app/documents`, private, not served;
   `HR_DOCUMENTS_DISK` for another disk, `HR_DOCUMENTS_MAX_KB` for the limit, 5120). `storage/app` is not in git. A
   refused, withdrawn or removed upload's file is deleted after the commit; a superseded one is kept.
+- The tests use `Storage::fake('documents')`: their files go to `storage/framework/testing/disks/documents` (git
+  ignored, emptied by the next test run), never to `storage/app/documents`, which only real uploads fill.
 - The migration `2026_11_29_000050` (Audit) lets `documents.downloaded` be a security event in
   `audit_events_category_follows_event`.
 
@@ -1009,8 +1011,8 @@ console approval, signed login, a call with the token, the audit log.
 - A document's content is a file on the server's disk: backing up `storage/app/documents` with the database belongs
   to the deployment (Step 7).
 - A removed or corrected movement does not undo what the file took from it (D-048): the file is corrected as any file.
-- Open for the owner (from the frontend's questions): the dashboard's period, complete attendance and what an import
-  brings (OD-26). Instalments have no schedule, so «متأخر قسط واحد» is not computed (OD-21).
+- Not built, by the owner's decision (OD-26): the dashboard's period filter (frontend Q-14) and a «complete»
+  attendance mark (Q-16). Open for the owner: what an import brings (OD-27). Instalments have no schedule, so «متأخر قسط واحد» is not computed (OD-21).
 - A wrong value in a locked identity cannot be corrected in the application, by the owner's decision (D-034): the
   administrator checks it before approving.
 - Assumed until the owner says otherwise: the current work unit (OD-15), the three names as the minimum of a new
