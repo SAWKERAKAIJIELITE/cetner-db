@@ -42,22 +42,6 @@ services:
       db:
         condition: service_healthy
 
-  scheduler:
-    build: .
-    restart: unless-stopped
-    command: ["php", "artisan", "schedule:work"]
-    stop_signal: SIGTERM
-    environment:
-      <<: *app-env
-    volumes:
-      - storage:/var/www/html/storage
-    healthcheck:
-      test: ["CMD", "healthcheck-schedule"]
-      start_period: 10s
-    depends_on:
-      app:
-        condition: service_healthy
-
   db:
     image: postgres:16-alpine
     restart: unless-stopped
