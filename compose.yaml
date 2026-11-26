@@ -28,7 +28,6 @@ x-app-env: &app-env
 services:
   app:
     build: .
-    image: center-db:latest
     restart: unless-stopped
     environment:
       <<: *app-env
@@ -44,7 +43,7 @@ services:
         condition: service_healthy
 
   scheduler:
-    image: center-db:latest
+    build: .
     restart: unless-stopped
     command: ["php", "artisan", "schedule:work"]
     stop_signal: SIGTERM
