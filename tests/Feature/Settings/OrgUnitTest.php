@@ -12,7 +12,7 @@ class OrgUnitTest extends TestCase
 {
     private function add(string $name, ?int $parentId = null): int
     {
-        return $this->postJson(self::API.'/settings/org-units', ['name' => $name, 'parent_id' => $parentId])->assertCreated()->json('data.id');
+        return $this->postJson(self::API.'/settings/org-units', ['name_ar' => $name, 'parent_id' => $parentId])->assertCreated()->json('data.id');
     }
 
     public function test_a_tree_of_six_levels_is_built_with_paths(): void
@@ -31,7 +31,7 @@ class OrgUnitTest extends TestCase
             ->assertJsonPath('data.5.path_label', 'القيادة العامة / مديرية الإدارة / فرع الموارد البشرية / شعبة التجنيد / قسم الاختبارات / مكتب القبول')
             ->assertJsonPath('data.5.path_ids', $ids);
 
-        $this->postJson(self::API.'/settings/org-units', ['name' => 'سابع', 'parent_id' => $parent])->assertUnprocessable()
+        $this->postJson(self::API.'/settings/org-units', ['name_ar' => 'سابع', 'parent_id' => $parent])->assertUnprocessable()
             ->assertJsonPath('errors.parent_id.0', __('settings.org_max_depth', ['max' => 6]));
 
         $this->assertDatabaseHas('audit_events', ['event' => 'settings.org_unit_added']);
@@ -47,9 +47,9 @@ class OrgUnitTest extends TestCase
         $this->add('فرع المالية', $a);
         $this->add('فرع المالية', $b);
 
-        $this->postJson(self::API.'/settings/org-units', ['name' => 'مديريه الاداره', 'parent_id' => $root])->assertUnprocessable()
-            ->assertJsonValidationErrors('name');
-        $this->postJson(self::API.'/settings/org-units', ['name' => 'القيادة العامة'])->assertUnprocessable();
+        $this->postJson(self::API.'/settings/org-units', ['name_ar' => 'مديريه الاداره', 'parent_id' => $root])->assertUnprocessable()
+            ->assertJsonValidationErrors('name_ar');
+        $this->postJson(self::API.'/settings/org-units', ['name_ar' => 'القيادة العامة'])->assertUnprocessable();
     }
 
     public function test_a_unit_is_archived_after_its_children_and_restored_under_an_active_parent(): void
@@ -68,7 +68,7 @@ class OrgUnitTest extends TestCase
 
         $this->postJson(self::API."/settings/org-units/{$child}/restore")->assertUnprocessable()
             ->assertJsonPath('errors.unit.0', __('settings.org_parent_archived'));
-        $this->postJson(self::API.'/settings/org-units', ['name' => 'جديدة', 'parent_id' => $root])->assertUnprocessable();
+        $this->postJson(self::API.'/settings/org-units', ['name_ar' => 'جديدة', 'parent_id' => $root])->assertUnprocessable();
 
         $this->postJson(self::API."/settings/org-units/{$root}/restore")->assertOk();
         $this->postJson(self::API."/settings/org-units/{$child}/restore")->assertOk();
@@ -81,7 +81,7 @@ class OrgUnitTest extends TestCase
         $root = $this->add('القيادة العامة');
         $child = $this->add('مديرية الادارة', $root);
 
-        $this->putJson(self::API."/settings/org-units/{$child}", ['name' => 'مديرية الإدارة'])->assertOk()
+        $this->putJson(self::API."/settings/org-units/{$child}", ['name_ar' => 'مديرية الإدارة'])->assertOk()
             ->assertJsonPath('data.path_label', 'القيادة العامة / مديرية الإدارة');
         $this->assertDatabaseHas('audit_events', ['event' => 'settings.org_unit_renamed']);
     }
@@ -114,6 +114,6 @@ class OrgUnitTest extends TestCase
         $this->actingAsStaff($this->staffUser());
 
         $this->getJson(self::API.'/settings/org-units')->assertOk();
-        $this->postJson(self::API.'/settings/org-units', ['name' => 'القيادة العامة'])->assertForbidden();
+        $this->postJson(self::API.'/settings/org-units', ['name_ar' => 'القيادة العامة'])->assertForbidden();
     }
 }

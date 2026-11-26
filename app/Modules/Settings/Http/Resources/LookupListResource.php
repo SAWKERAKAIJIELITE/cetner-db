@@ -15,7 +15,7 @@ class LookupListResource extends JsonResource
     {
         return [
             'key' => $this->key,
-            'label' => $this->label,
+            'name_ar' => $this->label,
             /** The fields that use it. */
             'used_by' => $this->usedBy,
             'items' => LookupItemResource::collection($this->items ?? collect()),

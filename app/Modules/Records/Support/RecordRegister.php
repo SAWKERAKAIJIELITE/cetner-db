@@ -93,7 +93,7 @@ final class RecordRegister
     /** The columns of a register row, in one order for both halves of the union. */
     private static function columns(RecordType $type): array
     {
-        return ['id', 'employee_id', ...RecordCatalogue::keys($type), ...$type->generated(),
+        return ['id', 'employee_id', ...RecordCatalogue::keys($type), ...$type->generated(), ...$type->bookkeeping(),
             'created_by', 'approved_by', 'deleted_at', 'deleted_by', 'created_at', 'updated_at'];
     }
 
@@ -143,6 +143,10 @@ final class RecordRegister
 
         foreach ($type->generated() as $column) {
             $select[] = '('.$generated[$column].')::'.$types[$column]." AS {$column}";
+        }
+
+        foreach ($type->bookkeeping() as $column) {
+            $select[] = 'NULL::'.$types[$column]." AS {$column}";
         }
 
         array_push($select, 's.submitted_by AS created_by', 'NULL::uuid AS approved_by', 'NULL::timestamptz AS deleted_at',

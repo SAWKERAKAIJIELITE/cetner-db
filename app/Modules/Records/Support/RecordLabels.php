@@ -4,6 +4,8 @@ namespace App\Modules\Records\Support;
 
 use App\Modules\Records\Enums\RecordType;
 use App\Modules\Settings\Support\ListCatalogue;
+use App\Modules\Settings\Support\OrgUnitTree;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -35,8 +37,8 @@ final class RecordLabels
         }
 
         foreach ($this->wanted as $list => $ids) {
-            foreach (DB::table(ListCatalogue::table($list))->whereIn('id', array_keys($ids))->get(['id', 'label', 'code']) as $row) {
-                $this->items[$list][(int) $row->id] = ['label' => $row->label, 'code' => $row->code];
+            foreach (DB::table(ListCatalogue::table($list))->whereIn('id', array_keys($ids))->get(['id', 'label', 'code', 'archived_at']) as $row) {
+                $this->items[$list][(int) $row->id] = ['label' => $row->label, 'code' => $row->code, 'archived' => $row->archived_at !== null];
             }
         }
 
@@ -73,9 +75,48 @@ final class RecordLabels
 
         return match ($field['type']) {
             'list' => $this->items[$field['list']][(int) $value]['label'] ?? null,
+            'unit' => $this->unitPath((int) $value),
             'debt' => $this->debts[$value] ?? null,
             default => (string) $value,
         };
+    }
+
+    /**
+     * A list value as the hiring system gives it: `{id, name_ar, archived}`; null for another field or an empty
+     * value.
+     *
+     * @return array{id: int, name_ar: ?string, archived: bool}|null
+     */
+    public function ref(RecordType $type, string $key, mixed $value): ?array
+    {
+        $field = RecordCatalogue::field($type, $key);
+
+        if ($value === null || ! in_array($field['type'], ['list', 'unit'], true)) {
+            return null;
+        }
+
+        if ($field['type'] === 'unit') {
+            return ['id' => (int) $value, 'name_ar' => $this->unitPath((int) $value), 'archived' => $this->unitArchived((int) $value)];
+        }
+
+        $item = $this->items[$field['list']][(int) $value] ?? null;
+
+        return ['id' => (int) $value, 'name_ar' => $item['label'] ?? null, 'archived' => (bool) ($item['archived'] ?? false)];
+    }
+
+    /** @var Collection<int, object>|null */
+    private ?Collection $units = null;
+
+    private function unitPath(int $id): ?string
+    {
+        $unit = ($this->units ??= OrgUnitTree::all(true)->keyBy('id'))->get($id);
+
+        return $unit === null ? null : implode(' / ', $unit->path);
+    }
+
+    private function unitArchived(int $id): bool
+    {
+        return ($this->units ??= OrgUnitTree::all(true)->keyBy('id'))->get($id)?->archived_at !== null;
     }
 
     /** @return array{id: int, label: ?string, code: ?string}|null */

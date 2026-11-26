@@ -27,7 +27,7 @@ class StaffUserRegistrationTest extends TestCase
     {
         $admin = $this->admin();
 
-        $this->actingAsStaff($admin)->postJson(self::API.'/users', $this->payload())->assertCreated()
+        $this->actingAsStaff($admin)->postJson(self::API.'/new', $this->payload())->assertCreated()
             ->assertJsonPath('data.username', 'omar.entry')
             ->assertJsonPath('data.personal_number', '123456')
             ->assertJsonPath('data.role.slug', 'data_entry')
@@ -42,7 +42,7 @@ class StaffUserRegistrationTest extends TestCase
 
     public function test_a_user_created_inactive_has_a_reason(): void
     {
-        $this->actingAsStaff($this->admin())->postJson(self::API.'/users', $this->payload(['is_active' => false]))->assertCreated()
+        $this->actingAsStaff($this->admin())->postJson(self::API.'/new', $this->payload(['is_active' => false]))->assertCreated()
             ->assertJsonPath('data.is_active', false)->assertJsonPath('data.deactivation_reason', __('identity.created_inactive'));
     }
 
@@ -50,7 +50,7 @@ class StaffUserRegistrationTest extends TestCase
     {
         $this->actingAsStaff($this->admin());
 
-        $response = $this->postJson(self::API.'/users', $this->payload([
+        $response = $this->postJson(self::API.'/new', $this->payload([
             'username' => 'عمر',
             'first_name' => 'ع1',
             'personal_number' => '12',
@@ -68,7 +68,7 @@ class StaffUserRegistrationTest extends TestCase
     {
         $this->staffUser(attributes: ['username' => 'omar.entry', 'personal_number' => '123456']);
 
-        $this->actingAsStaff($this->admin())->postJson(self::API.'/users', $this->payload())->assertUnprocessable()
+        $this->actingAsStaff($this->admin())->postJson(self::API.'/new', $this->payload())->assertUnprocessable()
             ->assertJsonValidationErrors(['username', 'personal_number']);
     }
 
@@ -94,5 +94,12 @@ class StaffUserRegistrationTest extends TestCase
 
         $this->expectException(QueryException::class);
         DB::table('staff_users')->where('id', $user->id)->update(['is_active' => false]);
+    }
+
+    public function test_staff_users_are_added_at_the_hiring_systems_path(): void
+    {
+        $this->actingAsStaff($this->admin());
+        $this->postJson(self::API.'/users', [])->assertMethodNotAllowed();
+        $this->postJson(self::API.'/new', [])->assertUnprocessable()->assertJsonValidationErrors(['username', 'first_name', 'last_name', 'personal_number', 'role', 'password']);
     }
 }

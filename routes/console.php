@@ -17,3 +17,6 @@ Schedule::command('sanctum:prune-expired --hours=48')->dailyAt('03:10')->timezon
 
 // Contracts ending within 30 days, told to the staff who update files (D-046).
 Schedule::command('employees:remind-expiring-contracts')->dailyAt('06:00')->timezone(config('hr.timezone'))->withoutOverlapping();
+
+// Approved movements whose day has come update their files (D-048).
+Schedule::command('records:apply-due-movements')->dailyAt('00:10')->timezone(config('hr.timezone'))->withoutOverlapping();

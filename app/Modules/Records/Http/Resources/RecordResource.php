@@ -42,6 +42,8 @@ class RecordResource extends JsonResource
                 'label' => $field['label'],
                 'value' => $values[$key],
                 'display' => $labels->display($type, $key, $values[$key]),
+                /** A list or unit value as `{id, name_ar, archived}`; null otherwise. */
+                'item' => $labels->ref($type, $key, $values[$key]),
             ];
         }
 
@@ -52,8 +54,8 @@ class RecordResource extends JsonResource
                 'id' => $this->employee_id,
                 'personal_number' => $employee?->personal_number,
                 'full_name' => $employee?->fullName(),
-                'org_unit' => $employeeLabels->unitPath($employee?->org_unit_id),
-                'job_title' => $employeeLabels->item('job_title_id', $employee?->job_title_id)['label'] ?? null,
+                'org_unit' => $employeeLabels->ref('org_unit_id', $employee?->org_unit_id),
+                'job_title' => $employeeLabels->ref('job_title_id', $employee?->job_title_id),
             ],
             /** approved («معتمد») or pending («قيد التدقيق»: an addition waiting for review, counted nowhere yet). */
             'review_status' => $pending = ($this->getAttribute('review_status') ?? 'approved'),

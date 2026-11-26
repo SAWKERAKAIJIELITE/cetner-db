@@ -43,7 +43,7 @@ abstract class EmployeeRecord extends Model
         foreach (RecordCatalogue::fields($this->recordType()) as $key => $field) {
             $casts[$key] = match ($field['type']) {
                 'date' => 'date:Y-m-d',
-                'int', 'list' => 'integer',
+                'int', 'list', 'unit' => 'integer',
                 'days' => 'float',
                 default => null,
             };

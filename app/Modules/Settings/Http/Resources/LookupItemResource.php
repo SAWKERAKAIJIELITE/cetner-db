@@ -17,7 +17,7 @@ class LookupItemResource extends JsonResource
     {
         return [
             'id' => $this->id,
-            'label' => $this->label,
+            'name_ar' => $this->label,
             /** Set for a system item (renamed, never archived); null otherwise. */
             'code' => $this->code,
             'sort_order' => $this->sort_order,

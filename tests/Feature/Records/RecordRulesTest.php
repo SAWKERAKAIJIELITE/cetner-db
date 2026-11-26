@@ -19,7 +19,7 @@ class RecordRulesTest extends TestCase
 
         $this->getJson(self::API.'/records/movements/fields')->assertOk()
             ->assertJsonPath('data.record_type_label', 'سجل الحركات')
-            ->assertJsonCount(11, 'data.fields')
+            ->assertJsonCount(15, 'data.fields')
             ->assertJsonFragment(['key' => 'movement_type_id', 'label' => 'نوع الحركة', 'type' => 'list', 'list' => 'movement_type', 'required' => true, 'fixed' => false, 'max' => null]);
         $this->getJson(self::API.'/records/attendance/fields')->assertJsonFragment(['key' => 'month', 'fixed' => true]);
         $this->getJson(self::API.'/records/conduct/fields')->assertJsonCount(10, 'data.fields');
@@ -79,7 +79,7 @@ class RecordRulesTest extends TestCase
     public function test_records_are_entered_for_approved_files_only(): void
     {
         $this->actingAsStaff($this->staffUser());
-        $pending = $this->postJson(self::API.'/employees', ['values' => ['personal_number' => '44003', 'first_name' => 'ليلى', 'father_name' => 'سعيد', 'family_name' => 'الحسن']])->json('data.employee.id');
+        $pending = $this->postJson(self::API.'/employees', ['values' => ['personal_number' => '44003', 'national_number' => '44444444403', 'first_name' => 'ليلى', 'father_name' => 'سعيد', 'family_name' => 'الحسن']])->json('data.employee.id');
 
         $this->postJson(self::API.'/records/conduct', ['employee_id' => $pending, 'values' => ['occurred_on' => '2026-01-01', 'conduct_type_id' => $this->itemId('conduct_type', 'warning')]])
             ->assertUnprocessable()->assertJsonValidationErrors('employee_id');

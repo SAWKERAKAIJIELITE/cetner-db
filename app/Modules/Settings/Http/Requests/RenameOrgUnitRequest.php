@@ -9,7 +9,8 @@ class RenameOrgUnitRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => ['required', 'string', 'max:150', 'not_regex:/^\s*$/u'],
+            /** The unit's Arabic name. */
+            'name_ar' => ['required', 'string', 'max:150', 'not_regex:/^\s*$/u'],
         ];
     }
 }

@@ -1,6 +1,6 @@
 # HR Backend: Technical Documentation (نظام إدارة القوى البشرية)
 
-Status: **Step 4.1** (Step 1: foundation, staff identity and roles, device-bound login, access and user management,
+Status: **Step 4.2** (Step 1: foundation, staff identity and roles, device-bound login, access and user management,
 audit log; Step 2: settings; Step 3: the employee's file with review, history, identity lock and cycles; Step 4: the
 four records with their review and the status report's year).
 Updated at the end of every step.
@@ -152,16 +152,18 @@ app/
     │   │                   EmployeeQuery, ValueLabels
     │   └── routes.php
     ├── Records/
-    │   ├── Actions/        SubmitRecordChanges (one or a batch), ApplyRecordChangeSet, DecideRecordChangeSet
-    │   ├── Console/        GenerateDemoRecordsCommand (records:generate-demo, development only)
-    │   ├── Database/       Migrations (2)
+    │   ├── Actions/        SubmitRecordChanges (one or a batch), ApplyRecordChangeSet, DecideRecordChangeSet,
+    │   │                   ApplyMovementToFile
+    │   ├── Console/        ApplyDueMovementsCommand (records:apply-due-movements), GenerateDemoRecordsCommand
+    │   │                   (records:generate-demo, development only)
+    │   ├── Database/       Migrations (3)
     │   ├── Enums/          RecordType, RecordAction, DebtStatus
     │   ├── Http/           Controllers (Record, RecordChange, EmployeeRecords), Requests, Resources
     │   ├── Models/         EmployeeRecord (base), EmployeeMovement, EmployeeAttendance, EmployeeConductRecord,
     │   │                   EmployeeDebt, EmployeeDebtPayment, RecordChangeSet, RecordChangeItem
     │   ├── Support/        RecordCatalogue (each record's columns), RecordValues, RecordComputed, RecordLabels,
     │   │                   RecordPage, RecordRegister, RecordSummary, DebtTotals, PlannedDays, PlannedMonth,
-    │   │                   LeaveTypes, RecordChange
+    │   │                   LeaveTypes, MovementEffects, RecordChange
     │   └── routes.php
     ├── Notifications/
     │   ├── Console/        RemindExpiringContractsCommand (employees:remind-expiring-contracts)
@@ -331,7 +333,7 @@ Interactive documentation: `/docs/api` (local only, D-021).
 | POST | `/roles/{role}/permissions` | `permissions: [slug]` |
 | DELETE | `/roles/{role}/permissions/{permission}` | Remove one (404 when not held) |
 | GET | `/users` | By username; `q` (username, names, personal number in any digits), `role`, `is_active`, `per_page` |
-| POST | `/users` | `username`, `first_name`, `last_name`, `personal_number`, `role`, `is_active` (optional), `password` + `password_confirmation`. 201 |
+| POST | `/new` | Add a staff user (the hiring system's path, D-047): `username`, `first_name`, `last_name`, `personal_number`, `role`, `is_active` (optional), `password` + `password_confirmation`. 201 |
 | GET | `/users/{user}` | One user with the effective permissions |
 | PUT | `/users/{user}/role` | `role`: replaces the one role |
 | POST | `/users/{user}/deactivate` | `reason` (not yourself) |
@@ -553,16 +555,16 @@ Base path `/api/v1/staff/settings`. Reading: any signed-in user. Changing: `sett
 
 | Method | Path | Purpose |
 | ------ | ---- | ------- |
-| GET | `/lists` | Every list with its active items in order; `include_archived=1` adds the archived ones |
+| GET | `/lists` | Every list (`key`, `name_ar`, `used_by`) with its active items in order (`id`, `name_ar`, `code`, `sort_order`, `archived`, `archived_at`, `usage_count`); `include_archived=1` adds the archived ones |
 | GET | `/lists/{key}` | One list (same parameter) |
-| POST | `/lists/{key}/items` | `label`, `sort_order` (optional). 201 |
-| PUT | `/lists/{key}/items/{id}` | `label` and/or `sort_order` |
+| POST | `/lists/{key}/items` | `name_ar`, `sort_order` (optional). 201 |
+| PUT | `/lists/{key}/items/{id}` | `name_ar` and/or `sort_order` |
 | POST | `/lists/{key}/items/{id}/archive` | Not offered any more (system items: 422) |
 | POST | `/lists/{key}/items/{id}/restore` | Offered again |
 | PUT | `/lists/{key}/order` | `item_ids`: every active item, in order |
-| GET | `/org-units` | Every unit: `id`, `parent_id`, `level`, `name`, `path`, `path_ids`, `path_label`, `archived`; `include_archived=1` |
-| POST | `/org-units` | `name`, `parent_id` (absent: a top-level unit). 201 |
-| PUT | `/org-units/{id}` | `name` |
+| GET | `/org-units` | Every unit: `id`, `parent_id`, `level`, `name_ar`, `path`, `path_ids`, `path_label`, `archived`, `active_employees` (with the units under it), `direct_active_employees`; `include_archived=1` |
+| POST | `/org-units` | `name_ar`, `parent_id` (absent: a top-level unit). 201 |
+| PUT | `/org-units/{id}` | `name_ar` |
 | POST | `/org-units/{id}/archive` | Once its children are archived |
 | POST | `/org-units/{id}/restore` | Under an active parent |
 | GET | `/holidays` | By start date; `year` for those touching a year |
@@ -642,7 +644,8 @@ the field in Arabic. A list item or unit must be active (an archived one already
 | General manager | no | no | no | no | no |
 | Administrator | at once (locks) | at once | at once | yes, identity too (locks), not their own | yes |
 
-- A new file needs «الرقم الذاتي» and the three names (Step 4.1, D-047).
+- A new file needs «الرقم الذاتي», «الرقم الوطني» and the three names (D-047; the national number: owner, 25 Nov).
+- An approved movement updates the file as a change «تطبيق حركة» (D-048).
 - Only real changes are kept; nothing changed → 422.
 - Identity lock (D-034): any identity field → `needs_identity_review`, approved by `identity.review` only, which locks
   the identity. Once locked, a non-empty identity value is refused for everyone (422, and the trigger); an empty one
@@ -661,8 +664,8 @@ Base path `/api/v1/staff`.
 | GET | `/field-definitions` | signed in | The guide: `key`, `label`, `section`, `workbook_column`, `type`, `list`, `min`, `max`, `cycle`, `counts_for_completeness`, `identity` |
 | PUT | `/field-definitions/{key}` | `settings.manage` | `counts_for_completeness` and/or `cycle`; every active file's completeness follows |
 | GET | `/employees` | `employees.view` | 25 per page. `q` (a name in any spelling, or the start of a personal or national number), `org_unit_id` (+ `include_sub_units`, default true), `employee_status_id`, `job_status_id`, `work_schedule_id`, `position_level_id`, `org_stage_id`, `gender_id`, `file_status` (default active), `contract_ends_within_days`, `overdue_cycle`, `completeness_below`, `identity_locked`, `has_debts`, `has_pending`, `sort` (`name`, `personal_number`, `completeness`, `contract_ends_on`, `created_at`), `direction`, `per_page` 5 to 100. Row: numbers, name, unit path, statuses, contract end and days left, completeness, missing count, overdue cycles, pending count |
-| POST | `/employees` | `employees.create` | `values` (field => value), `note`. 201 with the change set (pending, or applied for a reviewer) |
-| GET | `/employees/{id}` | `employees.view` | `identity` (locked, when, by whom), `fields` (each: label, section, cycle, type, identity, `locked`, `value`, `display`, `pending` [value, display, author, time, identity]), `computed` (full name, age, service years with `service_started_on` and `service_ended_on`, contract days left, unit paths, `has_debts`, `total_remaining`, `open_debts`, `overdue_debts`), `completeness` with `completeness_filled` / `completeness_counted`, `missing_fields` by cycle, `warnings`, `reviews` (per cycle: `cycle_label`, period, last confirmation, `days_since`, `window`, due date, overdue, current period done), `pending_change_sets` |
+| POST | `/employees` | `employees.create` | `values` (field => value; «الرقم الذاتي», «الرقم الوطني» and the three names required), `note`. 201 with the change set (pending, or applied for a reviewer). The document lists every field with its type (`StoreEmployeeRequest`, generated from `FieldCatalogue::valuesShape()`; a test keeps it equal) |
+| GET | `/employees/{id}` | `employees.view` | `application_date` («تاريخ التقديم»: the day the file was approved), `identity` (locked, when, by whom), `fields` (each: label, section, cycle, type, identity, `locked`, `value`, `display`, `item` (a list or unit value as `{id, name_ar, archived}`), `pending` [value, display, author, time, identity]), `computed` (full name, age, service years with `service_started_on` and `service_ended_on`, contract days left, unit paths, `has_debts`, `total_remaining`, `open_debts`, `overdue_debts`), `completeness` with `completeness_filled` / `completeness_counted`, `missing_fields` by cycle, `warnings`, `reviews` (per cycle: `cycle_label`, period, last confirmation, `days_since`, `window`, due date, overdue, current period done), `pending_change_sets` |
 | PATCH | `/employees/{id}` | `employees.update` | `values`, `note`. 201 with the change set |
 | POST | `/employees/{id}/reviews` | `employees.update` | `cycle` (monthly, quarterly, semi_annual, annual), `values` (that cycle's fields, optional), `note`. 201 |
 | POST | `/employees/{id}/identity/lock` | `identity.review` | Confirm and lock the identity (needs the three names, no identity change waiting); never undone |
@@ -697,6 +700,7 @@ The values themselves are in the change items, not in the audit log.
 | `employees:verify-identity` | 02:30 | Recomputes every locked identity's fingerprint (D-038); a mismatch is a critical log line and an audit event, and the command fails |
 | `model:prune` | 03:00 | Login challenges expired for a day |
 | `sanctum:prune-expired --hours=48` | 03:10 | Tokens expired for two days |
+| `records:apply-due-movements` | 00:10 | Approved movements whose day has come update their files (D-048) |
 | `employees:remind-expiring-contracts` | 06:00 | Contracts ending within 30 days, told once (D-046) |
 
 The fingerprint is HMAC-SHA256 of the six identity values with `HR_IDENTITY_HASH_KEY` (`.env`; APP_KEY if unset).
@@ -726,7 +730,7 @@ author of the addition), `approved_by`, `deleted_at` and `deleted_by` (both or n
 
 | Table | Workbook | Columns | Checks |
 | ----- | -------- | ------- | ------ |
-| `employee_movements` | سجل الحركات | `occurred_on`, `movement_type_id`, `description`, `identified_by` (المعرف بها), `entity`, `course_mark`, `amount`, `starts_on`, `ends_on`, `days` (generated: the period's calendar days, both ends included), `status` (الحالة, text) | both ends or neither, in order, under 400 days; amount ≥ 0; marks 0–1000 |
+| `employee_movements` | سجل الحركات | `occurred_on`, `movement_type_id`, `description`, `identified_by` (المعرف بها), `entity`, `course_mark`, `amount`, `starts_on`, `ends_on`, `days` (generated: the period's calendar days, both ends included), `status` (الحالة, text); what the file becomes (D-048): `new_org_unit_id`, `new_job_status_id`, `new_position_level_id`, `new_job_title_id`; `applied_to_file_at`, `file_change_set_id` | both ends or neither, in order, under 400 days; amount ≥ 0; marks 0–1000; once applied to the file, it stays applied (trigger) |
 | `employee_attendance` | سجل الدوام الشهري | `year`, `month`, `planned_days`, `attended_days` (one decimal), `absent_days` (generated), `exceptional_skills` | year 2000–2100, month 1–12; planned ≤ the month's days; attended ≤ planned; one per employee and month among kept rows (partial unique index); the month fixed (trigger) |
 | `employee_conduct_records` | سجل السلوك الوظيفي | `occurred_on`, `conduct_type_id`, `subject`, `reported_by`, `decision`, `decision_number`, `decision_on`, `conduct_status_id`, `document_link` | |
 | `employee_debts` | سجل الديون | `creditor`, `debt_type_id`, `reason`, `incurred_on`, `amount`, `paid_amount` (paid when entered), `payments_total` (the trigger's), `monthly_installment`, `due_on`, `remaining_amount` (generated: amount − paid − payments) | amount > 0; paid ≥ 0; paid + payments ≤ amount; installment ≥ 0; `payments_total` written by the payments' trigger only |
@@ -753,6 +757,10 @@ formula columns: a dated record's year and month, a movement's days; a month's a
 `high_absence` (≥ the branch's `high_absence_rate`); a debt's `paid_total`, `payments_total`, `remaining_amount`,
 `installments_left` and `status` with `status_label` (paid, overdue, outstanding, as of today in Damascus).
 `LeaveTypes` says which movement types are leaves (the four codes, or a name beginning with «إجازة»).
+`MovementEffects` says what each movement type makes of the file (D-048), which targets it takes and needs, and
+`ApplyMovementToFile` applies it: at approval when its day has come, otherwise `records:apply-due-movements` that
+morning; once; a later movement already taken wins. A movement's `computed` has `file_fields`, `applied_to_file_at`
+and `file_change_set_id`.
 
 `RecordRegister` builds a register: the approved records and, unless `review_status=approved`, the waiting
 additions read from their change items with the same columns, in one UNION ALL (D-041). The waiting half takes the
@@ -846,7 +854,7 @@ Any signed-in active staff user; nobody sees another's.
 ## 13. Testing
 
 `php artisan test` (PostgreSQL database `hr_test`, `RefreshDatabase`, the catalogues seeded through
-`DatabaseSeeder` for every test): **153 tests**. Fixed device keys in `tests/Support/TestDeviceKeys.php` (D-020); helpers in
+`DatabaseSeeder` for every test): **160 tests**. Fixed device keys in `tests/Support/TestDeviceKeys.php` (D-020); helpers in
 `tests/Support/StaffTestHelpers.php` (`staffUser($role)`, `admin()`, `pendingDevice()`, `approvedDevice()`,
 `loginThrough()` (challenge and signed login through the API), `actingAsStaff()`).
 
@@ -874,6 +882,7 @@ Any signed-in active staff user; nobody sees another's.
 | `Feature/Records/RecordRegisterTest` | The register by name or number (any spelling, Arabic digits), the personal number instead of the id (unknown refused), unit with sub-units, period, type, sort and direction, `per_page` 5 and filters in the links, bad sort refused; attendance by months, half days, no absence, the branch's absence threshold; conduct by status, debts by creditor and remaining; a waiting addition in the register but in no total |
 | `Feature/Notifications/NotificationTest` | A refusal of the file or a record tells its author with the reason; unread count, read one, read all, nobody reads another's; the badges by role; a contract ending within 30 days told once to data entry and the supervisor, not the general manager or the administrator |
 | `Feature/Settings/SettingsCountsTest` | A list item's use by files and records; the payment methods list; a unit's active employees with its sub-units |
+| `Feature/Records/MovementToFileTest` | An approved discharge updates the file (date, «مسرح», «غير فعال») as «تطبيق حركة» in its history by the reviewer, nothing while waiting; each type's targets required or refused; the administrator's movements apply at once, a reward changes nothing; a movement for a later day waits for it (the daily job, once); an old movement entered late does not undo a later one; a waiting change of the same field becomes stale; a taken movement stays taken |
 | `Unit/ArabicTextTest`, `Unit/BusinessDayTest` | Digits, search key; the next Damascus midnight, a day's UTC bounds |
 
 API documentation check: `php artisan scramble:analyze` must report no warnings. Code style: `./vendor/bin/pint`.
@@ -886,8 +895,8 @@ console approval, signed login, a call with the token, the audit log.
 - The employees, their records, documents, views and import come in Steps 3 to 7 (section 2).
 - The 13 documents (5 of them counted for completeness) come in Step 5; until then a conduct record's document is a
   link (text). The status report, the dashboards and the exports read the records in Step 6.
-- Open for the owner (from the frontend's questions): whether movements change the file (OD-23), «تاريخ التقديم»
-  (OD-24), «صلة السكن بجهة الطوارئ» (OD-25), the dashboard's period, complete attendance and what an import brings
+- A removed or corrected movement does not undo what the file took from it (D-048): the file is corrected as any file.
+- Open for the owner (from the frontend's questions): «صلة السكن بجهة الطوارئ» (OD-25), the dashboard's period, complete attendance and what an import brings
   (OD-26). Instalments have no schedule, so «متأخر قسط واحد» is not computed (OD-21).
 - A wrong value in a locked identity cannot be corrected in the application, by the owner's decision (D-034): the
   administrator checks it before approving.
@@ -913,3 +922,4 @@ console approval, signed login, a call with the token, the audit log.
 | 3.1 | The identity limit replaced by the **identity lock** (owner, 24 Nov): six identity fields (الرقم الذاتي، الرقم الوطني، الاسم، الأب، الأم، العائلة); locked when the administrator approves them; then changed by nobody, enforced by a trigger; empty ones filled once (D-034). The keyed identity fingerprint and its nightly check (D-038). History and logs: the record and the application log kept for good, only changes stored, measured at 55 MB a year for 4,000 files; expired challenges and tokens pruned; a failed login logged with the device, the username and the address (D-039). No correction after the lock (OD-14 answered). 117 tests |
 | 4 | The records: «سجل الحركات», «سجل الدوام الشهري», «سجل السلوك الوظيفي», «سجل الديون» as four typed tables, written only by approved changes, never deleted (D-040); their changes reviewed like the file's, batches of up to 500 for a month's attendance, approved whole, stale sets refused (D-041); the workbook's checks and formula columns, in the API and the database (D-042); the weekly days off and the month's planned days suggested (D-043); the status report's year and the file's debt columns, computed (D-044); `course` and four conduct codes; `records:generate-demo` and the measurements (D-031). 138 tests |
 | 4.1 | Aligned with the frontend (D-047): `*_label` beside every enum, `reason` for refusals and removals, `per_page` 5–100 with `sort`/`direction` and filters in the links, `/api/v1` as the documented base, every response typed. Owner's answers of 25 Nov: waiting additions in the registers, counted nowhere (D-041); debt payments as entries of their own with a payment methods list (D-045); leave days computed as calendar days, a leave needs its period; only internal and external leave from the balance (D-042, D-044); OD-17, OD-18 answered. Notifications and `/badges` (D-046). From the requirements: «الرقم الذاتي» required, the register's filters, filled out of counted (68, 73 with Step 5), service dates, debt counts, list items' use, units' active employees, computed daily hours, the absence threshold as a setting, codes for the leave, movement and conduct types; half days of attendance; the registers' filters by employee, unit, period. 153 tests |
+| 4.2 | The hiring system's `name_ar` for list items and units (and `{id, name_ar, archived}` values in the file, the register and the records) and `POST /new` for staff users (D-047). «الرقم الوطني» required on a new file; every field of a new file and of a change in the API document, generated from the catalogue; «تاريخ التقديم» = the file's approval date (OD-24). A movement updates the file (D-048, OD-23): targets on the movement, effects by type, applied when approved and due or by `records:apply-due-movements`, «تطبيق حركة» in the file's history. 160 tests |

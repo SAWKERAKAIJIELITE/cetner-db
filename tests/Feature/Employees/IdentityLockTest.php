@@ -145,7 +145,7 @@ class IdentityLockTest extends TestCase
     public function test_the_administrator_approving_a_new_file_locks_it(): void
     {
         $set = $this->actingAsStaff($this->staffUser())->postJson(self::API.'/employees', ['values' => [
-            'personal_number' => '44002', 'first_name' => 'هدى', 'father_name' => 'محمود', 'family_name' => 'السيد',
+            'personal_number' => '44002', 'national_number' => '44444444402', 'first_name' => 'هدى', 'father_name' => 'محمود', 'family_name' => 'السيد',
         ]])->json('data');
 
         $this->actingAsStaff($this->admin())->postJson(self::API."/employee-changes/{$set['id']}/approve")->assertOk();

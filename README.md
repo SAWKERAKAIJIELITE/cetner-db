@@ -16,7 +16,7 @@ cp .env.example .env && php artisan key:generate
 psql -U postgres -c "CREATE DATABASE hr;" -c "CREATE DATABASE hr_test;"
 php artisan migrate --seed          # demo accounts: admin, supervisor, manager, entry, entry.two — password Password1!
 php artisan serve
-php artisan test                    # 153 tests on PostgreSQL
+php artisan test                    # 160 tests on PostgreSQL
 ```
 
 Log in like the desktop app will, with the reference client:

@@ -10,7 +10,8 @@ use App\Modules\Employees\Enums\Cycle;
 use App\Modules\Employees\Http\Requests\EmployeeIndexRequest;
 use App\Modules\Employees\Http\Requests\HistoryRequest;
 use App\Modules\Employees\Http\Requests\ReviewCycleRequest;
-use App\Modules\Employees\Http\Requests\SubmitValuesRequest;
+use App\Modules\Employees\Http\Requests\StoreEmployeeRequest;
+use App\Modules\Employees\Http\Requests\UpdateEmployeeRequest;
 use App\Modules\Employees\Http\Resources\ChangeSetResource;
 use App\Modules\Employees\Http\Resources\EmployeeResource;
 use App\Modules\Employees\Http\Resources\EmployeeSummaryResource;
@@ -35,7 +36,16 @@ class EmployeeController extends Controller
         $page = EmployeeQuery::build($request->validated())->paginate((int) ($request->validated('per_page') ?? 25))->withQueryString();
         $ids = $page->getCollection()->pluck('id')->all();
 
-        EmployeeSummaryResource::$labels = new ValueLabels;
+        // Every row's list values in one query per list (D-031).
+        $labels = new ValueLabels;
+
+        foreach ($page->getCollection() as $row) {
+            foreach (['employee_status_id', 'job_status_id', 'job_title_id'] as $field) {
+                $labels->add($field, $row->getAttribute($field));
+            }
+        }
+
+        EmployeeSummaryResource::$labels = $labels;
         EmployeeSummaryResource::$reviews = ReviewStatus::forMany($ids);
         EmployeeSummaryResource::$pending = DB::table('employee_change_sets')
             ->whereIn('employee_id', $ids)->where('status', ChangeSetStatus::Pending->value)
@@ -56,7 +66,7 @@ class EmployeeController extends Controller
      * Add an employee. From data entry it waits for the supervisor; from a reviewer it is applied at once.
      * 201 with the change set.
      */
-    public function store(SubmitValuesRequest $request, SubmitEmployeeChanges $action): JsonResponse
+    public function store(StoreEmployeeRequest $request, SubmitEmployeeChanges $action): JsonResponse
     {
         $set = $action->create($request->values(), $request->validated('note'), $request->user());
 
@@ -64,7 +74,7 @@ class EmployeeController extends Controller
     }
 
     /** Change fields: only real changes are kept; waits for review unless the author reviews (D-023, D-034). */
-    public function update(SubmitValuesRequest $request, Employee $employee, SubmitEmployeeChanges $action): JsonResponse
+    public function update(UpdateEmployeeRequest $request, Employee $employee, SubmitEmployeeChanges $action): JsonResponse
     {
         $set = $action->update($employee, $request->values(), $request->validated('note'), $request->user());
 

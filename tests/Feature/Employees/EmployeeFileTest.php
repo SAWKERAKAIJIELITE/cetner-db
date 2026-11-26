@@ -2,7 +2,10 @@
 
 namespace Tests\Feature\Employees;
 
+use App\Modules\Employees\Actions\SubmitEmployeeChanges;
 use App\Modules\Employees\Database\Seeders\FieldDefinitionsSeeder;
+use App\Modules\Employees\Http\Requests\StoreEmployeeRequest;
+use App\Modules\Employees\Http\Requests\UpdateEmployeeRequest;
 use App\Modules\Employees\Models\FieldDefinition;
 use App\Modules\Employees\Support\FieldCatalogue;
 use App\Modules\Identity\Enums\StaffRole;
@@ -47,8 +50,8 @@ class EmployeeFileTest extends TestCase
 
         // A unit at level 2 fills both levels.
         $this->actingAsStaff($this->admin());
-        $top = $this->postJson(self::API.'/settings/org-units', ['name' => 'القيادة'])->json('data.id');
-        $second = $this->postJson(self::API.'/settings/org-units', ['name' => 'مديرية', 'parent_id' => $top])->json('data.id');
+        $top = $this->postJson(self::API.'/settings/org-units', ['name_ar' => 'القيادة'])->json('data.id');
+        $second = $this->postJson(self::API.'/settings/org-units', ['name_ar' => 'مديرية', 'parent_id' => $top])->json('data.id');
         $placed = $this->employeeFile(['org_unit_id' => $second]);
         $this->assertSame(round(7 * 100 / 68, 2), (float) $placed->completeness);
         $atTop = $this->employeeFile(['org_unit_id' => $top]);
@@ -114,7 +117,7 @@ class EmployeeFileTest extends TestCase
 
         $this->actingAsStaff($this->staffUser());
         $this->getJson(self::API.'/employees?q=فاطمه')->assertJsonCount(1, 'data')->assertJsonPath('data.0.full_name', 'فاطمة محمد الخطيب')
-            ->assertJsonPath('data.0.org_unit.path_label', 'القيادة / مديرية');
+            ->assertJsonPath('data.0.org_unit.name_ar', 'القيادة / مديرية')->assertJsonPath('data.0.org_unit.archived', false);
         $this->getJson(self::API.'/employees?q=مصطفي')->assertJsonCount(1, 'data');
         $this->getJson(self::API.'/employees?q=٠١٢٣٤')->assertJsonCount(1, 'data');
         $this->getJson(self::API.'/employees?q=7788')->assertJsonCount(1, 'data');
@@ -162,9 +165,9 @@ class EmployeeFileTest extends TestCase
             ->assertJsonPath('data.0.personal_number', '300')->assertJsonPath('meta.per_page', 5)
             ->assertJsonPath('links.first', fn ($url) => str_contains($url, 'sort=personal_number'));
 
-        // «الرقم الذاتي» is the workbook's key: a new file needs it with the three names.
+        // «الرقم الذاتي» (the workbook's key) and «الرقم الوطني» (owner, 25 Nov): a new file needs them with the three names.
         $this->postJson(self::API.'/employees', ['values' => ['first_name' => 'ليلى', 'father_name' => 'سعيد', 'family_name' => 'الحسن']])
-            ->assertUnprocessable()->assertJsonValidationErrors('values.personal_number');
+            ->assertUnprocessable()->assertJsonValidationErrors(['values.personal_number', 'values.national_number']);
     }
 
     public function test_the_file_shows_where_its_service_is_counted_from(): void
@@ -179,5 +182,22 @@ class EmployeeFileTest extends TestCase
             ->assertJsonPath('data.reviews.monthly.window', 35)
             ->assertJsonPath('data.reviews.monthly.days_since', null)
             ->assertJsonPath('data.reviews.monthly.cycle_label', 'شهري');
+    }
+
+    public function test_the_api_document_lists_every_field_of_a_new_file(): void
+    {
+        // The requests' documented shape is FieldCatalogue's: regenerate it when the catalogue changes.
+        foreach ([
+            StoreEmployeeRequest::class => SubmitEmployeeChanges::REQUIRED_TO_CREATE,
+            UpdateEmployeeRequest::class => [],
+        ] as $class => $required) {
+            $source = file_get_contents((new \ReflectionClass($class))->getFileName());
+            $this->assertStringContainsString('@var '.FieldCatalogue::valuesShape($required), $source, "{$class} is out of date");
+        }
+
+        Carbon::setTestNow('2026-11-25 09:00:00');
+        $employee = $this->employeeFile();
+        $this->actingAsStaff($this->staffUser())->getJson(self::API."/employees/{$employee->id}")
+            ->assertJsonPath('data.application_date', '2026-11-25');
     }
 }

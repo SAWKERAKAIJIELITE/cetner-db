@@ -63,6 +63,8 @@ class EmployeeResource extends JsonResource
             'full_name' => $this->fullName(),
             'created_at' => $this->created_at?->toIso8601String(),
             'activated_at' => $this->activated_at?->toIso8601String(),
+            /** «تاريخ التقديم»: the day the file was approved (owner, 25 Nov), a Damascus date. */
+            'application_date' => $this->activated_at?->setTimezone(config('hr.timezone'))->format('Y-m-d'),
             /** The identity lock (D-034): once locked, the six identity fields are never changed. */
             'identity' => [
                 'locked' => IdentityLock::isLocked($this->resource),
@@ -79,6 +81,8 @@ class EmployeeResource extends JsonResource
                 'locked' => $pair[0]->identity && IdentityLock::isLocked($this->resource) && $pair[1] !== null,
                 'value' => $pair[1],
                 'display' => $labels->display($key, $pair[1]),
+                /** A list or unit value as `{id, name_ar, archived}` (the hiring system's shape); null otherwise. */
+                'item' => $labels->ref($key, $pair[1]),
                 /** @var list<array{change_set_id: string, value: string|int|float|bool|null, display: ?string, submitted_by: StaffUserSummaryResource, submitted_at: string, needs_identity_review: bool}> */
                 'pending' => array_map(fn ($p) => ['display' => $labels->display($key, $p['value'])] + $p, $pending[$key] ?? []),
             ]),

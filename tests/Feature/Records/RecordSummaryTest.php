@@ -32,7 +32,7 @@ class RecordSummaryTest extends TestCase
 
         // A leave type the settings managers add counts as a leave, as in the workbook (its name begins with «إجازة»),
         // spelled without the hamza too.
-        $this->postJson(self::API.'/settings/lists/movement_type/items', ['label' => 'اجازة أمومة'])->assertCreated();
+        $this->postJson(self::API.'/settings/lists/movement_type/items', ['name_ar' => 'اجازة أمومة'])->assertCreated();
         $move('2026-05-01', 'اجازة أمومة', ['starts_on' => '2026-05-01', 'ends_on' => '2026-05-05']);
 
         // A leave without its period is refused.

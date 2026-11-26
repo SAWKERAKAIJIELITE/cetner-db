@@ -9,6 +9,7 @@ use App\Modules\Records\Models\EmployeeMovement;
 use App\Modules\Records\Models\EmployeeRecord;
 use App\Modules\Settings\Models\WorkSettings;
 use App\Support\BusinessDay;
+use Illuminate\Support\Carbon;
 
 /**
  * The workbook's formula columns of a record (D-042): the absent days and the absence rate of a month, what is
@@ -54,6 +55,13 @@ final class RecordComputed
         if ($record instanceof EmployeeMovement) {
             /** Calendar days from «من تاريخ» to «إلى تاريخ», both included (owner, 25 Nov). */
             $computed['days'] = $record->getAttribute('days') === null ? null : (int) $record->getAttribute('days');
+            /** The file fields a movement of this type updates (D-048); empty for a leave, a reward, a course… */
+            $computed['file_fields'] = MovementEffects::fields((int) $record->getAttribute('movement_type_id'));
+            /** When the file took it: null until approved and due. */
+            $computed['applied_to_file_at'] = $record->getAttribute('applied_to_file_at') === null ? null
+                : Carbon::parse($record->getAttribute('applied_to_file_at'))->toIso8601String();
+            /** The file's change that did it (its history); null when nothing differed. */
+            $computed['file_change_set_id'] = $record->getAttribute('file_change_set_id');
         }
 
         return $computed;

@@ -32,4 +32,7 @@ return [
     'payment_over_remaining' => 'مبلغ الدفعة أكبر من المتبقي على الدين (:remaining).',
     'payments_over_debt' => 'الدفعات تتجاوز المتبقي على الدين: يُردّ الإرسال.',
     'debt_has_payments' => 'للدين دفعات مسجلة: تُحذف الدفعات أولاً.',
+    'movement_target_unused' => '«:field» لا يخص هذا النوع من الحركات.',
+    'movement_target_required' => 'هذه الحركة تحتاج «:field»: منه يُحدَّث ملف الموظف.',
+    'movement_target_one_of' => 'الترقية تحتاج المنصب الجديد أو المسمى الوظيفي الجديد.',
 ];

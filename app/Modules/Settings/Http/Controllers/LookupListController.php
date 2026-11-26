@@ -37,7 +37,7 @@ class LookupListController extends Controller
     /** Add an item (a duplicate, typed another way, is refused). */
     public function store(StoreListItemRequest $request, string $list, ManageListItems $action): JsonResponse
     {
-        $item = $action->add(ManagedList::findOrFail($list), $request->validated('label'), $request->validated('sort_order'), $request->user());
+        $item = $action->add(ManagedList::findOrFail($list), $request->validated('name_ar'), $request->validated('sort_order'), $request->user());
 
         return (new LookupItemResource($item))->response()->setStatusCode(201);
     }
@@ -46,7 +46,7 @@ class LookupListController extends Controller
     public function update(UpdateListItemRequest $request, string $list, int $item, ManageListItems $action): LookupItemResource
     {
         return new LookupItemResource($action->update(
-            ManagedList::findOrFail($list), $item, $request->validated('label'), $request->validated('sort_order'), $request->user(),
+            ManagedList::findOrFail($list), $item, $request->validated('name_ar'), $request->validated('sort_order'), $request->user(),
         ));
     }
 

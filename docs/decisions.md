@@ -765,6 +765,10 @@ Template at the end of this file.
 - **Decision:**
   - **Labels beside values**: an enum is `status` and `status_label` (also `kind`, `cycle`, `record_type`, `action`,
     `file_status`), never an object.
+  - **Names** (Step 4.2, owner): a list item's and a unit's name is `name_ar`, in requests and responses (the tables
+    keep `label` and `name`); a list or unit value in the file, the register and the records is `{id, name_ar,
+    archived}` (`item` beside `value` and `display`; a unit's name_ar is its path).
+  - **Staff users are added at `POST /new`** (Step 4.2, owner), the hiring system's path and fields.
   - **Reasons**: a refusal takes `reason` (3 to 2,000 characters), as do a record's removal and a deactivation; an
     approval takes an optional `note`.
   - **Lists**: `per_page` 5 to 100 (25), `sort` from each list's fixed set and `direction` (`asc`/`desc`), `page`;
@@ -773,7 +777,8 @@ Template at the end of this file.
   - **The OpenAPI document** is the frontend's generated client: served under `/api/v1` (`scramble.api_path`), every
     response typed (no hand-built pages, no untyped arrays), `scramble:analyze` at zero.
   - **From the requirements**: «الرقم الذاتي» required on a new file (the workbook's key; records may name an employee
-    by it); the register's filters «نوع الدوام», «المنصب», «المرحلة التنظيمية», «الجنس»; the banner's filled out of
+    by it), and «الرقم الوطني» (owner, 25 Nov); every field of a new file and of a change in the API document with its
+    type, the array shape on the requests' `values` generated from FieldCatalogue and kept equal by a test; the register's filters «نوع الدوام», «المنصب», «المرحلة التنظيمية», «الجنس»; the banner's filled out of
     counted, the unit counting as the workbook's levels 1 and 2 (68 now, 73 with the five documents of Step 5); the
     service's start and end dates; open and late debts on the file; each cycle's window and days since its review;
     «عدد المستخدمين» of a list item and «عدد الموظفين الفعّالين» of a unit with the units under it; «ساعات العمل
@@ -781,6 +786,34 @@ Template at the end of this file.
     the conduct types and «قيد التحقيق», which the dashboards of Step 6 count by.
 - **Kept apart** (the frontend's §8): no deletion of an employee (D-007), no list kind added from the app (D-024),
   no unit moved (D-026).
+
+### D-048 An approved movement updates the employee's file
+
+- **Status:** Accepted (owner, 25 Nov: «a movement should update the employee file»; frontend Q-11)
+- **Decision:**
+  - **The movement says what the file becomes**: `new_org_unit_id` («الجهة الجديدة»), `new_job_status_id`,
+    `new_position_level_id` («المنصب الجديد»), `new_job_title_id`, taken by type (the type's code, so renaming it
+    changes nothing):
+
+    | Type | The file takes |
+    | ---- | -------------- |
+    | نقل داخلي | the new unit (required); a new position or title if given |
+    | تغيير حالة | the new «الحالة الوظيفية» (required) |
+    | ترقية | the new position or title (one at least) |
+    | تكليف، تعيين، تثبيت | its date as «تاريخ التكليف / التعيين / التثبيت»; a new status, unit, position or title if given |
+    | تسريح | «تاريخ التسريح» = its date, «الحالة الوظيفية» «مسرح» (or the one given), «حالة الموظف» «غير فعال» |
+    | استقالة | «تاريخ التسريح» = its date, «حالة الموظف» «غير فعال»; a new status if given |
+
+    Leaves, rewards, deductions and courses change nothing; a target given to a type that does not take it is refused.
+  - **When**: once the movement is approved and its day has come: at approval for today or earlier; for a later day,
+    `records:apply-due-movements` at 00:10 that day. Once (`applied_to_file_at`, kept by a trigger).
+  - **How**: the fields that differ become a change of the file of its own kind, «تطبيق حركة», applied at once (the
+    movement's reviewer approved it), in the file's history with the movement in its note (`file_change_set_id`). A
+    change of the same field waiting meanwhile becomes stale, as any.
+  - **A later movement wins**: an old movement entered late does not overwrite what a later one, already taken, set.
+  - **Not undone**: removing or correcting a movement does not change the file back; the file is corrected as any file.
+- **Rejected:** updating the file by hand only (the owner's answer); applying a future movement at approval (a
+  discharge entered in advance would end the service early).
 
 ---
 
@@ -809,8 +842,8 @@ Template at the end of this file.
 | OD-20 | The design's registers show «قيد التدقيق» and «معتمد» (frontend Q-10). | **Answered** (25 Nov): waiting additions in the registers, counted nowhere (D-041). |
 | OD-21 | Debt payments (frontend Q-15). | **Answered** (25 Nov): each payment an entry, reviewed, never edited; methods a list (D-045). Instalments are only a monthly amount: no schedule, so «متأخر قسط واحد» cannot be computed. |
 | OD-22 | Leave days (frontend Q-6). | **Answered** (25 Nov): calendar days from the period, both ends included (D-042). |
-| OD-23 | Do movements change the file (frontend Q-11)? «تسريح» setting «الحالة الوظيفية» and «تاريخ التسريح», «نقل داخلي» the unit… | **Open.** For now the file is updated by hand. |
-| OD-24 | «تاريخ التقديم» on the file's banner (frontend Q-12). | **Open.** The file has `created_at` and `activated_at` (approved). |
+| OD-23 | Do movements change the file (frontend Q-11)? | **Answered** (25 Nov): yes (D-048). |
+| OD-24 | «تاريخ التقديم» on the file's banner (frontend Q-12). | **Answered** (25 Nov): the day the file was approved (`application_date`). |
 | OD-25 | «صلة السكن بجهة الطوارئ» in the design, not in the workbook (frontend Q-13). | **Open.** Not a field. |
 | OD-26 | What the dashboard's period filters (frontend Q-14); what makes the attendance «complete» (Q-16); which data an import brings (Q-17). | **Open**, for Steps 6 and 7. |
 | OD-12 | Scale and performance (owner's questions, 23 Nov): cache, distributed database, history. | **Answered in D-031.** |

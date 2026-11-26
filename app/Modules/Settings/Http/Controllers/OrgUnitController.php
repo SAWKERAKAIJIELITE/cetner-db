@@ -27,7 +27,7 @@ class OrgUnitController extends Controller
     {
         $parentId = $request->validated('parent_id');
         $parent = $parentId === null ? null : OrgUnit::query()->findOrFail($parentId);
-        $unit = $action->add($request->validated('name'), $parent, $request->user());
+        $unit = $action->add($request->validated('name_ar'), $parent, $request->user());
 
         return (new OrgUnitResource($unit))->response()->setStatusCode(201);
     }
@@ -35,7 +35,7 @@ class OrgUnitController extends Controller
     /** Rename a unit. */
     public function update(RenameOrgUnitRequest $request, OrgUnit $unit, ManageOrgUnits $action): OrgUnitResource
     {
-        return new OrgUnitResource($action->rename($unit, $request->validated('name'), $request->user()));
+        return new OrgUnitResource($action->rename($unit, $request->validated('name_ar'), $request->user()));
     }
 
     /** Archive a unit whose children are archived. */

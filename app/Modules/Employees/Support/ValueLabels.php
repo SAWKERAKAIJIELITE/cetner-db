@@ -50,8 +50,8 @@ final class ValueLabels
                 continue;
             }
 
-            foreach (DB::table(ListCatalogue::table($list))->whereIn('id', $missing)->get(['id', 'label', 'code']) as $row) {
-                $this->items[$list][(int) $row->id] = ['label' => $row->label, 'code' => $row->code];
+            foreach (DB::table(ListCatalogue::table($list))->whereIn('id', $missing)->get(['id', 'label', 'code', 'archived_at']) as $row) {
+                $this->items[$list][(int) $row->id] = ['label' => $row->label, 'code' => $row->code, 'archived' => $row->archived_at !== null];
             }
         }
 
@@ -75,7 +75,7 @@ final class ValueLabels
         };
     }
 
-    /** @return array{label: string, code: ?string}|null */
+    /** @return array{label: string, code: ?string, archived: bool}|null */
     public function item(string $field, mixed $value): ?array
     {
         if ($value === null) {
@@ -87,6 +87,35 @@ final class ValueLabels
 
         return $this->items[FieldCatalogue::get($field)['list']][(int) $value] ?? null;
     }
+
+    /**
+     * A list or unit value as the hiring system gives it: `{id, name_ar, archived}`; null for another field or an
+     * empty value. A unit's name_ar is its path.
+     *
+     * @return array{id: int, name_ar: ?string, archived: bool}|null
+     */
+    public function ref(string $field, mixed $value): ?array
+    {
+        if ($value === null || ! FieldCatalogue::has($field)) {
+            return null;
+        }
+
+        return match (FieldCatalogue::get($field)['type']) {
+            'list' => ['id' => (int) $value, 'name_ar' => $this->item($field, $value)['label'] ?? null, 'archived' => (bool) ($this->item($field, $value)['archived'] ?? false)],
+            'org_unit' => ['id' => (int) $value, 'name_ar' => $this->unitPath((int) $value), 'archived' => $this->unitArchived((int) $value)],
+            default => null,
+        };
+    }
+
+    private function unitArchived(int $id): bool
+    {
+        $this->archivedUnits ??= OrgUnitTree::all(true)->filter(fn ($u) => $u->archived_at !== null)->mapWithKeys(fn ($u) => [(int) $u->id => true])->all();
+
+        return isset($this->archivedUnits[$id]);
+    }
+
+    /** @var array<int, true>|null */
+    private ?array $archivedUnits = null;
 
     public function unitPath(?int $id): ?string
     {

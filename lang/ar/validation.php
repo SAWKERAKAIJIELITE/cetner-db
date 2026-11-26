@@ -105,9 +105,8 @@ return [
         ],
         'first_name' => ['not_regex' => 'لا يحتوي الاسم أرقامًا.'],
         'last_name' => ['not_regex' => 'لا يحتوي الكنية أرقامًا.'],
-        'label' => ['not_regex' => 'الاسم فارغ.', 'required_without' => 'أرسل الاسم أو الترتيب.'],
+        'name_ar' => ['not_regex' => 'الاسم فارغ.', 'required_without' => 'أرسل الاسم أو الترتيب.'],
         'sort_order' => ['required_without' => 'أرسل الاسم أو الترتيب.'],
-        'name' => ['not_regex' => 'الاسم فارغ.'],
     ],
 
     'attributes' => [
@@ -123,6 +122,7 @@ return [
         'permissions.*' => 'الصلاحية',
         'reason' => 'السبب',
         'label' => 'الاسم',
+        'name_ar' => 'الاسم',
         'public_key' => 'المفتاح العام',
         'reported_mac' => 'عنوان MAC',
         'os_info' => 'نظام التشغيل',
