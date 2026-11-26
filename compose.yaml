@@ -1,0 +1,79 @@
+x-app-env: &app-env
+  APP_NAME: ${APP_NAME:-HR}
+  APP_ENV: production
+  APP_DEBUG: "false"
+  APP_KEY: ${APP_KEY:?APP_KEY is required}
+  APP_URL: ${APP_URL:?APP_URL is required}
+  APP_LOCALE: ${APP_LOCALE:-en}
+  APP_FALLBACK_LOCALE: ${APP_FALLBACK_LOCALE:-en}
+  # The identity fingerprint key (D-038): keep it with the backups, never rotate it casually.
+  HR_IDENTITY_HASH_KEY: ${HR_IDENTITY_HASH_KEY:?HR_IDENTITY_HASH_KEY is required}
+  HR_TIMEZONE: ${HR_TIMEZONE:-Asia/Damascus}
+  LOG_CHANNEL: stack
+  LOG_STACK: daily
+  LOG_DAILY_DAYS: "0"
+  LOG_LEVEL: ${LOG_LEVEL:-warning}
+  DB_CONNECTION: pgsql
+  DB_HOST: db
+  DB_PORT: "5432"
+  DB_DATABASE: ${DB_DATABASE:-hr}
+  DB_USERNAME: ${DB_USERNAME:-hr}
+  DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+  SESSION_DRIVER: database
+  CACHE_STORE: database
+  QUEUE_CONNECTION: ${QUEUE_CONNECTION:-database}
+  MAIL_MAILER: ${MAIL_MAILER:-log}
+  PHP_OPCACHE_ENABLE: "1"
+
+services:
+  app:
+    build: .
+    image: center-db:latest
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      # Runs migrate --force, storage:link and optimize on every start (web container only).
+      AUTORUN_ENABLED: "true"
+      HEALTHCHECK_PATH: /up
+    ports:
+      - "8082:8080"
+    volumes:
+      - storage:/var/www/html/storage
+    depends_on:
+      db:
+        condition: service_healthy
+
+  scheduler:
+    image: center-db:latest
+    restart: unless-stopped
+    command: ["php", "artisan", "schedule:work"]
+    stop_signal: SIGTERM
+    environment:
+      <<: *app-env
+    volumes:
+      - storage:/var/www/html/storage
+    healthcheck:
+      test: ["CMD", "healthcheck-schedule"]
+      start_period: 10s
+    depends_on:
+      app:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-hr}
+      POSTGRES_USER: ${DB_USERNAME:-hr}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  storage:
+  pgdata:
