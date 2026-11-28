@@ -4,8 +4,10 @@ x-app-env: &app-env
   APP_DEBUG: "false"
   APP_KEY: ${APP_KEY:?APP_KEY is required}
   APP_URL: ${APP_URL:?APP_URL is required}
-  APP_LOCALE: ${APP_LOCALE:-en}
-  APP_FALLBACK_LOCALE: ${APP_FALLBACK_LOCALE:-en}
+  # The messages are Arabic (D-005), fixed here: lang/en lacks the documents', reports' and imports' messages (they
+  # would show as keys), and a .env copied from .env.example beside this file would otherwise bring back "en".
+  APP_LOCALE: ar
+  APP_FALLBACK_LOCALE: ar
   # The identity fingerprint key (D-038): keep it with the backups, never rotate it casually.
   HR_IDENTITY_HASH_KEY: ${HR_IDENTITY_HASH_KEY:?HR_IDENTITY_HASH_KEY is required}
   HR_TIMEZONE: ${HR_TIMEZONE:-Asia/Damascus}
@@ -21,7 +23,10 @@ x-app-env: &app-env
   DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
   SESSION_DRIVER: file
   CACHE_STORE: database
-  QUEUE_CONNECTION: ${QUEUE_CONNECTION:-database}
+  # Nothing is queued (an import is written after its response, D-053), so there is no worker to run.
+  QUEUE_CONNECTION: ${QUEUE_CONNECTION:-sync}
+  # The reverse proxy in front (D-054): its addresses, or "*" only when port 8082 is reachable by the proxy alone.
+  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
   MAIL_MAILER: ${MAIL_MAILER:-log}
   PHP_OPCACHE_ENABLE: "1"
 
@@ -33,6 +38,8 @@ services:
       <<: *app-env
       # Runs migrate --force, storage:link and optimize on every start (web container only).
       AUTORUN_ENABLED: "true"
+      # migrate --force --seed: the roles, permissions, lists and field guide (re-run safe, no users; section 7.8).
+      AUTORUN_LARAVEL_MIGRATION_SEED: "true"
       HEALTHCHECK_PATH: /up
     ports:
       - "8082:8080"

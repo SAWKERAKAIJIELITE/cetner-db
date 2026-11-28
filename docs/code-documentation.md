@@ -1136,10 +1136,96 @@ notification `import_finished` (`import_id`, `status`, `file_name`, `failure`) g
 Each change set it wrote has its own `employees.change_submitted` / `records.change_submitted` and `…_approved`
 events with `import_id`.
 
-## 16. Testing
+## 16. Deployment (Step 7.2, D-054)
+
+The owner's stack: `Dockerfile` (on `serversideup/php:8.4-fpm-nginx`) and `compose.yaml` (the application and
+PostgreSQL 16), behind the owner's reverse proxy.
+
+### 16.1 What runs
+
+| Piece | Where | Notes |
+| ----- | ----- | ----- |
+| nginx and PHP-FPM | `app`, port 8080 (published as 8082) | As `www-data`; `gd` added for mPDF; the health check is `/up` |
+| The scheduler | `app`, the s6 service `laravel-scheduler` | `php artisan schedule:work`; the five commands of section 10.6, on Damascus time. **One replica only** |
+| Start-up (`AUTORUN_ENABLED`) | `app`, before nginx and the scheduler | Waits for the database, `storage:link`, `migrate --force --seed` (the catalogues, re-run safe), `optimize` (config, routes, events, views) |
+| PostgreSQL 16 | `db` | Not published; data on the `pgdata` volume |
+| Storage | the `storage` volume on `/var/www/html/storage` | Documents (`app/documents`), the daily logs (`logs`, never deleted, D-039), file sessions, mPDF's cache |
+
+The cache, the throttles and the scheduler's locks are in the database (`CACHE_STORE=database`, the `cache` table).
+Nothing is queued (`QUEUE_CONNECTION=sync`). Mail goes to the log (`MAIL_MAILER=log`): the notifications are in the
+application (D-046).
+
+### 16.2 The variables
+
+Only these belong in the `.env` beside `compose.yaml` (or the platform's settings); a copy of `.env.example` there
+would bring development values (`LOG_LEVEL=debug`, `QUEUE_CONNECTION=database`) into the server.
+
+| Variable | Required | Notes |
+| -------- | -------- | ----- |
+| `APP_KEY` | yes | `php artisan key:generate --show`, once; kept with `HR_IDENTITY_HASH_KEY`. Nothing stored is encrypted with it today |
+| `APP_URL` | yes | The address the desktop app uses, `https://…` |
+| `HR_IDENTITY_HASH_KEY` | yes | The identity fingerprint key (D-038), e.g. `openssl rand -base64 32`, once. **Lost or changed, every locked identity reads as broken** |
+| `DB_PASSWORD` | yes | The database user's password (`DB_USERNAME`, default `hr`; `DB_DATABASE`, default `hr`) |
+| `TRUSTED_PROXIES` | behind a proxy | The proxy's address or range as the container sees it (e.g. `172.16.0.0/12` for a proxy on the Docker network), or `*` when port 8082 is reachable by the proxy alone (bound to `127.0.0.1` or firewalled). Unset, everybody shares the proxy's address: one login throttle (30 a minute) for the whole staff, and the proxy's address in the audit log and the failed-login lines |
+| `LOG_LEVEL` | no | `warning` (default): failed logins (`staff_login_failed`) and errors are written; the audit's `info` lines are not, the audit table being the record (D-039) |
+
+`APP_LOCALE` and `APP_FALLBACK_LOCALE` are fixed to `ar` in `compose.yaml`: `lang/en` lacks the documents', reports'
+and imports' messages.
+
+### 16.3 First installation
+
+```bash
+docker compose up -d --build        # migrates and seeds the catalogues on start
+docker compose exec app php artisan staff:create-admin <username> --first-name=… --last-name=… --personal-number=…
+node tools/device-client.mjs register https://hr.example.local    # or the desktop app, on the admin's PC
+docker compose exec app php artisan staff:approve-device <device-id> <username> --fingerprint="XXXX XXXX …"
+```
+
+Then the organisational structure, the holidays and the branch settings from the application (section 9), and the
+workbook through the import (section 15).
+
+### 16.4 Backups and restore
+
+What must be kept: the database, the storage volume's `app/documents` and `logs`, and, **apart from them**, `APP_KEY`
+and `HR_IDENTITY_HASH_KEY`. Daily, copied off the server:
+
+```bash
+docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -Fc "$POSTGRES_DB"' > hr-$(date +%F).dump
+docker compose exec -T app tar czf - -C /var/www/html/storage app/documents logs > storage-$(date +%F).tgz
+```
+
+Restore into a new installation (same keys), before anybody uses it:
+
+```bash
+docker compose up -d db
+docker compose exec -T db sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner' < hr-2026-11-28.dump
+docker compose up -d app
+docker compose exec -T app tar xzf - -C /var/www/html/storage < storage-2026-11-28.tgz
+docker compose exec app php artisan employees:verify-identity    # every locked identity intact = the right key
+```
+
+### 16.5 The proxy in front
+
+- **HTTPS:** the bearer tokens and the passwords' signatures travel in every request; the proxy terminates TLS and
+  sends to port 8082. Port 8082 itself is not opened to the network.
+- **Body size:** at least 25 MB (an import is up to 20 MB, `HR_IMPORT_MAX_KB`; a document up to 5 MB). The image's
+  PHP allows 100 MB.
+- **Read timeout:** at least 120 seconds: staging a large workbook takes about 20 seconds on the development
+  machine, more on a small server. The writing happens after the response, in the PHP-FPM worker, which has no
+  time limit of its own (`set_time_limit(0)`); `imports:apply {id}` finishes an import left «قيد الاستيراد» by a
+  restart.
+- **Headers:** `X-Forwarded-For` and `X-Forwarded-Proto`, read only from `TRUSTED_PROXIES`.
+
+### 16.6 Upgrades
+
+`git pull && docker compose up -d --build`: the start migrates and seeds again (append-only migrations from the first
+installation on). Take a backup first. `/docs/api` answers 403 outside `local` (Scramble's default); the frontend
+team uses a development copy.
+
+## 17. Testing
 
 `php artisan test` (PostgreSQL database `hr_test`, `RefreshDatabase`, the catalogues seeded through
-`DatabaseSeeder` for every test; the field guide's per-request cache cleared): **189 tests**. Fixed device keys in `tests/Support/TestDeviceKeys.php` (D-020); helpers in
+`DatabaseSeeder` for every test; the field guide's per-request cache cleared): **192 tests**. Fixed device keys in `tests/Support/TestDeviceKeys.php` (D-020); helpers in
 `tests/Support/StaffTestHelpers.php` (`staffUser($role)`, `admin()`, `pendingDevice()`, `approvedDevice()`,
 `loginThrough()` (challenge and signed login through the API), `actingAsStaff()`).
 
@@ -1152,6 +1238,7 @@ events with `import_id`.
 | `Feature/Identity/CreateAdminCommandTest` | `staff:create-admin` with the API's rules, audited `via: console`; weak or mismatched password refused; confirmation when an administrator exists; refused before the roles are seeded |
 | `Feature/Audit/AuditEventApiTest` | Row with actor, category, related ids, address; nothing after a rollback; append-only (update, delete, truncate); category follows the event; newest first with filters (kind, event, related id, actor, Damascus days, bad input); operations only for `audit.view_related`; permission needed; every recorded event has a label and every label is recorded |
 | `Feature/RequestConventionsTest` | Arabic 401, 403, 404 and 429 (with `Retry-After`), Arabic validation messages, all without `\u` escapes; the database session in UTC |
+| `Feature/TrustedProxiesTest` | The forwarded address ignored without a trusted proxy, taken from a trusted one, ignored from a caller outside the trusted range (D-054) |
 | `Feature/Settings/LookupListTest` | The 28 lists, each in its own table, seeded in order with their system codes; the same word in two lists is two rows; everybody reads, the supervisor and the administrator change; added at the end and audited; duplicates by search key (and per list); rename and move; archive, restore (archived duplicate restored, not added); system items renamed, never archived (API and the table's CHECK); an id of another list or an unknown list is 404; reorder all active items; the seeder keeps the managers' changes and restores a missing code |
 | `Feature/Settings/OrgUnitTest` | Six levels with paths and the seventh refused; sibling names unique, cousins free; archive after the children, restore under an active parent; rename; the database trigger (level, root, archive with children, move); data entry reads only |
 | `Feature/Settings/HolidayAndWorkSettingsTest` | Days with both ends, by year; correct and delete (204); ends before start and longer than a year refused; the workbook's branch settings from the start (Friday and Saturday off); changes with their rules (the days off follow the working days, no day twice), each change audited, the same value recording nothing; only settings managers change |
@@ -1179,20 +1266,20 @@ API documentation check: `php artisan scramble:analyze` must report no warnings.
 The whole login was also run over HTTP with `tools/device-client.mjs` against `php artisan serve`: registration,
 console approval, signed login, a call with the token, the audit log.
 
-## 17. Known limitations and pending work
+## 18. Known limitations and pending work
 
-- The deployment guide (nginx with `fastcgi_read_timeout` long enough for an import's staging, PHP-FPM without
-  `request_terminate_timeout` for its writing, backups of the database and `storage/app/documents`) comes in Step 7.2.
+- Backups are not taken by the stack: the server takes them (section 16.4). The application runs as one replica,
+  the scheduler being in its container (D-054). The image was not built in the development environment (no access
+  to Docker Hub there) and the tests run on PHP 8.3, the image's PHP being 8.4.
 - Uploads are checked for their type only; there is no antivirus scan on the server. The workbook's document links
   are not imported (a link is not a file): the import lists them; the files are uploaded on each employee's file.
 - An import's column matching is automatic (by title); there is no manual mapping of an unknown column.
 - The PDF uses DejaVu Sans, which mPDF ships: Arabic-Indic digits (٠١٢) have no glyphs in it, so values keep the
   Latin digits the API stores. An export's or a form's filters are what the screen sends; nothing is scheduled.
-- A document's content is a file on the server's disk: backing up `storage/app/documents` with the database belongs
-  to the deployment (Step 7).
+- A document's content is a file on the server's disk: it is backed up with the database (section 16.4).
 - A removed or corrected movement does not undo what the file took from it (D-048): the file is corrected as any file.
 - Not built, by the owner's decision (OD-26): the dashboard's period filter (frontend Q-14) and a «complete»
-  attendance mark (Q-16). Open for the owner: what an import brings (OD-27). Instalments have no schedule, so «متأخر قسط واحد» is not computed (OD-21).
+  attendance mark (Q-16). Instalments have no schedule, so «متأخر قسط واحد» is not computed (OD-21).
 - A wrong value in a locked identity cannot be corrected in the application, by the owner's decision (D-034): the
   administrator checks it before approving.
 - Assumed until the owner says otherwise: the current work unit (OD-15), the three names as the minimum of a new
@@ -1200,12 +1287,12 @@ console approval, signed login, a call with the token, the audit log.
 - Sensitive fields are stored as given (D-030).
 - Passwords are not checked against known leaks (OD-4).
 - The device key is protected by the Windows user, not by hardware (D-013).
-- Failed logins are in the application log only; the audit table's retention belongs to the deployment.
-- `/docs/api` is reachable in `local` only; production serves `/api/…` alone (Step 7's nginx).
+- `/docs/api` is reachable in `local` only (Scramble answers 403 elsewhere).
+- Failed logins are in the log file of the storage volume, not sent to a separate log server (D-039).
 - Migrations may still change in place until the first production installation; from then on they are append-only
   (recruitment D-101).
 
-## 18. Changelog
+## 19. Changelog
 
 | Step | Summary |
 | ---- | ------- |
@@ -1221,3 +1308,4 @@ console approval, signed login, a call with the token, the audit log.
 | 5 | The employees' documents (D-049): the workbook's 13 attachments as uploads on a private disk, one row each, never deleted, content checked by type and hash; reviewed like the file (data entry's wait, a reviewer's at once, a refusal notifies, the uploader withdraws), the approved one replacing the current file and the old kept as superseded; removal by the administrator with a reason; downloads streamed safely and logged as security events; the 13 in the field guide as `document` definitions, so completeness counts the workbook's 73; a conduct record's document; the file's `documents_attached`, the badges' `reviews.documents`. «صلة السكن بجهة الطوارئ» not added (OD-25). 171 tests |
 | 6 | The forms, the dashboards and the exports. The three printed sheets of an employee as rows for the screen and as an A4 PDF from the server, logged (D-050). «لوحة التحكم» with its contracts and review lists, «داش بورد الموظفين» with a tile for every list item (renames and additions followed), «داش بورد الحركات» with its per-employee summary, all in SQL over the approved files and kept records (D-051). Streamed Excel exports of the employees, the registers and the summary, text never a formula, logged with filters and rows (D-052). mPDF and OpenSpout added. OD-26 answered (no period filter, no «complete» attendance); the import's scope is OD-27. A movement type's code read once (the register's pages were one query a movement). 181 tests |
 | 7.1 | The import (D-053; OD-27 answered: the files and the four registers, each if present). The workbook's sheets found by name and their columns by title; every row staged with its line, its status («صالحة», «تحتاج مراجعة», «غير صالحة», «مستبعدة») and each problem in Arabic: values, lists, units, numbers twice or taken, likely duplicates, locked identities, the registers' employees and rules, what differs from what is stored; skip or update for what is stored; the whole file refused when it is not an .xlsx, holds macros, was imported, or lacks a column. Reviewed (`entries.review`), never approved with an invalid row, written after the response in one transaction as the files' and registers' own change sets marked with the import; imported identities not locked, imported movements taken without changing the files; `imports:apply`. A change set's items in one insert; an import's records without savepoints. 189 tests |
+| 7.2 | The owner's Docker deployment reviewed and completed (D-054): Arabic fixed in `compose.yaml` and `phpunit.xml`; the catalogues seeded on every start; the reverse proxy trusted by address (`TRUSTED_PROXIES`, `config/trustedproxy.php`); no queue; no uploaded files or test disks in the image; the deployment guide (section 16): variables, first installation, backups and restore, the proxy's TLS, body size and timeout, upgrades. 192 tests |

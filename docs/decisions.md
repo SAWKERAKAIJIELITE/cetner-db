@@ -991,6 +991,42 @@ Template at the end of this file.
 
 ---
 
+## 10. Deployment (Step 7.2)
+
+### D-054 One image with the scheduler, Arabic fixed, the catalogues seeded on start, the proxy trusted by address
+
+- **Status:** Accepted (the owner deployed with `Dockerfile` and `compose.yaml` on 28 Nov; reviewed and completed the
+  same day)
+- **Context:** the owner's stack is `serversideup/php:8.4-fpm-nginx` (nginx and PHP-FPM as `www-data`, port 8080)
+  with `php artisan schedule:work` as an s6 service in the same container, PostgreSQL 16 beside it, the storage
+  folder and the database on named volumes, a reverse proxy in front.
+- **Decision:**
+  - **One built service:** the scheduler runs in the web container (an s6 `longrun`, started after the start-up
+    scripts). So the application runs as **one replica**: a second would run every scheduled command twice.
+  - **Arabic is fixed in `compose.yaml`** (`APP_LOCALE` and `APP_FALLBACK_LOCALE` = `ar`), not read from a `.env`:
+    the messages are Arabic (D-005) and `lang/en` does not have the documents', reports' and imports' messages, which
+    would reach the screen as keys (`imports.not_xlsx`). The tests set it too (`phpunit.xml`), so they no longer
+    depend on the developer's `.env`.
+  - **The catalogues on every start:** `AUTORUN_LARAVEL_MIGRATION_SEED=true` makes the start-up `migrate --force`
+    seed as well: roles and permissions, lists, the field guide; re-run safe, users only in `local` (section 7.8 of
+    the code documentation). A release that adds a permission or a field reaches the server without a manual step.
+    The first administrator and their device stay manual commands (D-018).
+  - **The proxy is trusted by address** (`TRUSTED_PROXIES`, `config/trustedproxy.php`): the login throttles and the
+    audit log read the user's address from `X-Forwarded-For` only when the request comes from a trusted proxy.
+    Unset, no proxy is trusted.
+  - **Nothing queued:** `QUEUE_CONNECTION=sync`; an import is written after its response in the PHP-FPM worker
+    (D-053), so there is no worker container.
+  - **The image carries no data:** `.dockerignore` leaves out the developer's uploaded documents, the tests' fake
+    disks and mPDF's font cache, which a new storage volume would otherwise receive from the image.
+  - **Backups are the server's job:** the database dump and the storage volume (`app/documents`, `logs`), daily and
+    off the server, with `APP_KEY` and `HR_IDENTITY_HASH_KEY` kept apart from them (section 16.4 of the code
+    documentation).
+- **Rejected:** `TRUSTED_PROXIES=*` by default (with port 8082 open to the network, anyone could choose their address
+  and dodge the login throttle); a queue and a worker for the import (one more container for one job a month);
+  writing the missing English messages (the application is Arabic only).
+
+---
+
 ## Open questions
 
 | ID | Question | Status |
