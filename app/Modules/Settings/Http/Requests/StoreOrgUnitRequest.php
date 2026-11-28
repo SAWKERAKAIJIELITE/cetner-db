@@ -9,7 +9,8 @@ class StoreOrgUnitRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => ['required', 'string', 'max:150', 'not_regex:/^\s*$/u'],
+            /** The unit's Arabic name. */
+            'name_ar' => ['required', 'string', 'max:150', 'not_regex:/^\s*$/u'],
             /** The unit it belongs to; absent for a top-level unit. */
             'parent_id' => ['nullable', 'integer', 'exists:org_units,id'],
         ];

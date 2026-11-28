@@ -30,11 +30,11 @@ class LookupListTest extends TestCase
         $this->assertSame(15, DB::table('movement_types')->count());
 
         $response = $this->actingAsStaff($this->staffUser())->getJson(self::API.'/settings/lists/job_status')->assertOk()
-            ->assertJsonPath('data.label', 'الحالة الوظيفية')
-            ->assertJsonPath('data.items.0.label', 'متعاقد دوام')
+            ->assertJsonPath('data.name_ar', 'الحالة الوظيفية')
+            ->assertJsonPath('data.items.0.name_ar', 'متعاقد دوام')
             ->assertJsonCount(7, 'data.items');
 
-        $this->assertSame('discharged', collect($response->json('data.items'))->firstWhere('label', 'مسرح')['code']);
+        $this->assertSame('discharged', collect($response->json('data.items'))->firstWhere('name_ar', 'مسرح')['code']);
         $this->getJson(self::API.'/settings/lists/job_title')->assertOk()->assertJsonCount(0, 'data.items');
         $this->getJson(self::API.'/settings/lists')->assertOk()->assertJsonCount(28, 'data');
         $this->getJson(self::API.'/settings/lists/no_such_list')->assertNotFound();
@@ -45,12 +45,12 @@ class LookupListTest extends TestCase
         foreach ([StaffRole::DataEntry, StaffRole::GeneralManager] as $role) {
             $this->actingAsStaff($this->staffUser($role));
             $this->getJson(self::API.'/settings/lists')->assertOk();
-            $this->postJson(self::API.'/settings/lists/job_title/items', ['label' => 'محاسب'])->assertForbidden();
+            $this->postJson(self::API.'/settings/lists/job_title/items', ['name_ar' => 'محاسب'])->assertForbidden();
         }
 
         foreach ([StaffRole::Supervisor, StaffRole::SystemAdmin] as $role) {
             $this->actingAsStaff($this->staffUser($role));
-            $this->postJson(self::API.'/settings/lists/job_title/items', ['label' => 'محاسب '.$role->value])->assertCreated();
+            $this->postJson(self::API.'/settings/lists/job_title/items', ['name_ar' => 'محاسب '.$role->value])->assertCreated();
         }
 
         $this->app['auth']->forgetGuards();
@@ -61,8 +61,8 @@ class LookupListTest extends TestCase
     {
         $supervisor = $this->staffUser(StaffRole::Supervisor);
 
-        $this->actingAsStaff($supervisor)->postJson(self::API.'/settings/lists/work_nature/items', ['label' => '  ميداني  '])
-            ->assertCreated()->assertJsonPath('data.label', 'ميداني')->assertJsonPath('data.sort_order', 3)->assertJsonPath('data.code', null);
+        $this->actingAsStaff($supervisor)->postJson(self::API.'/settings/lists/work_nature/items', ['name_ar' => '  ميداني  '])
+            ->assertCreated()->assertJsonPath('data.name_ar', 'ميداني')->assertJsonPath('data.sort_order', 3)->assertJsonPath('data.code', null);
 
         $this->assertDatabaseHas('audit_events', ['event' => 'settings.list_item_added', 'actor_id' => $supervisor->id, 'category' => 'operations']);
     }
@@ -71,13 +71,13 @@ class LookupListTest extends TestCase
     {
         $this->actingAsStaff($this->admin());
 
-        $this->postJson(self::API.'/settings/lists/housing_type/items', ['label' => 'سكن مع الأهل'])->assertUnprocessable()
-            ->assertJsonPath('errors.label.0', __('settings.item_duplicate', ['label' => 'سكن مع الاهل']));
+        $this->postJson(self::API.'/settings/lists/housing_type/items', ['name_ar' => 'سكن مع الأهل'])->assertUnprocessable()
+            ->assertJsonPath('errors.name_ar.0', __('settings.item_duplicate', ['label' => 'سكن مع الاهل']));
 
-        $this->postJson(self::API.'/settings/lists/blood_type/items', ['label' => 'a+'])->assertUnprocessable();
+        $this->postJson(self::API.'/settings/lists/blood_type/items', ['name_ar' => 'a+'])->assertUnprocessable();
 
         // Another list may hold the same word.
-        $this->postJson(self::API.'/settings/lists/work_schedule/items', ['label' => 'عمل حر'])->assertCreated();
+        $this->postJson(self::API.'/settings/lists/work_schedule/items', ['name_ar' => 'عمل حر'])->assertCreated();
     }
 
     public function test_an_item_is_renamed_and_moved(): void
@@ -85,16 +85,16 @@ class LookupListTest extends TestCase
         $this->actingAsStaff($this->admin());
         $item = $this->item('work_nature', 'إداري');
 
-        $this->putJson(self::API."/settings/lists/work_nature/items/{$item->id}", ['label' => 'إداري مكتبي'])->assertOk()
-            ->assertJsonPath('data.label', 'إداري مكتبي');
+        $this->putJson(self::API."/settings/lists/work_nature/items/{$item->id}", ['name_ar' => 'إداري مكتبي'])->assertOk()
+            ->assertJsonPath('data.name_ar', 'إداري مكتبي');
         $this->putJson(self::API."/settings/lists/work_nature/items/{$item->id}", ['sort_order' => 0])->assertOk()
             ->assertJsonPath('data.sort_order', 0);
-        $this->putJson(self::API."/settings/lists/work_nature/items/{$item->id}", ['label' => 'توجيهي'])->assertUnprocessable();
+        $this->putJson(self::API."/settings/lists/work_nature/items/{$item->id}", ['name_ar' => 'توجيهي'])->assertUnprocessable();
         $this->putJson(self::API."/settings/lists/work_nature/items/{$item->id}", [])->assertUnprocessable();
 
         // An item is reached through its own list only: each list has its own table and its own ids.
-        $this->putJson(self::API.'/settings/lists/gender/items/999', ['label' => 'x'])->assertNotFound();
-        $this->putJson(self::API."/settings/lists/no_such_list/items/{$item->id}", ['label' => 'x'])->assertNotFound();
+        $this->putJson(self::API.'/settings/lists/gender/items/999', ['name_ar' => 'x'])->assertNotFound();
+        $this->putJson(self::API."/settings/lists/no_such_list/items/{$item->id}", ['name_ar' => 'x'])->assertNotFound();
 
         $this->assertDatabaseHas('audit_events', ['event' => 'settings.list_item_updated']);
     }
@@ -108,8 +108,8 @@ class LookupListTest extends TestCase
         $this->getJson(self::API.'/settings/lists/blood_type')->assertJsonCount(7, 'data.items');
         $this->getJson(self::API.'/settings/lists/blood_type?include_archived=1')->assertJsonCount(8, 'data.items');
 
-        $this->postJson(self::API.'/settings/lists/blood_type/items', ['label' => 'AB-'])->assertUnprocessable()
-            ->assertJsonPath('errors.label.0', __('settings.item_duplicate_archived', ['label' => 'AB-']));
+        $this->postJson(self::API.'/settings/lists/blood_type/items', ['name_ar' => 'AB-'])->assertUnprocessable()
+            ->assertJsonPath('errors.name_ar.0', __('settings.item_duplicate_archived', ['label' => 'AB-']));
         $this->postJson(self::API."/settings/lists/blood_type/items/{$item->id}/archive")->assertUnprocessable();
 
         $this->postJson(self::API."/settings/lists/blood_type/items/{$item->id}/restore")->assertOk()->assertJsonPath('data.archived', false);
@@ -126,7 +126,7 @@ class LookupListTest extends TestCase
 
         $this->postJson(self::API."/settings/lists/job_status/items/{$item->id}/archive")->assertUnprocessable()
             ->assertJsonPath('errors.item.0', __('settings.system_item'));
-        $this->putJson(self::API."/settings/lists/job_status/items/{$item->id}", ['label' => 'مُسرَّح'])->assertOk()
+        $this->putJson(self::API."/settings/lists/job_status/items/{$item->id}", ['name_ar' => 'مُسرَّح'])->assertOk()
             ->assertJsonPath('data.code', 'discharged');
 
         $this->expectException(QueryException::class);
@@ -141,7 +141,7 @@ class LookupListTest extends TestCase
         $this->assertSame(1, DB::table('external_entity_types')->where('label', 'عمل حر')->count());
         $this->assertSame(1, DB::table('external_link_types')->where('label', 'عمل حر')->count());
 
-        $id = $this->postJson(self::API.'/settings/lists/job_title/items', ['label' => 'محاسب'])->assertCreated()->json('data.id');
+        $id = $this->postJson(self::API.'/settings/lists/job_title/items', ['name_ar' => 'محاسب'])->assertCreated()->json('data.id');
         $this->assertSame('محاسب', DB::table('job_titles')->where('id', $id)->value('label'));
         $this->assertSame('job_title', ListItem::queryFor('job_title')->findOrFail($id)->listKey());
     }
@@ -152,7 +152,7 @@ class LookupListTest extends TestCase
         $ids = ListItem::queryFor('marital_status')->orderBy('sort_order')->pluck('id')->all();
 
         $this->putJson(self::API.'/settings/lists/marital_status/order', ['item_ids' => array_reverse($ids)])->assertOk()
-            ->assertJsonPath('data.items.0.label', 'أرمل');
+            ->assertJsonPath('data.items.0.name_ar', 'أرمل');
 
         $this->putJson(self::API.'/settings/lists/marital_status/order', ['item_ids' => [$ids[0]]])->assertUnprocessable()
             ->assertJsonPath('errors.item_ids.0', __('settings.reorder_all_items'));

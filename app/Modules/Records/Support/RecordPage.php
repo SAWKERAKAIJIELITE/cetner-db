@@ -2,6 +2,7 @@
 
 namespace App\Modules\Records\Support;
 
+use App\Modules\Documents\Support\DocumentQueries;
 use App\Modules\Employees\Enums\ChangeSetStatus;
 use App\Modules\Employees\Support\ValueLabels;
 use App\Modules\Identity\Models\StaffUser;
@@ -35,6 +36,7 @@ final class RecordPage
 
         RecordResource::$employeeLabels = $employeeLabels;
         RecordResource::$pending = self::pending($records->pluck('id')->all());
+        RecordResource::$documents = $type === RecordType::Conduct ? DocumentQueries::ofConductRecords($records->pluck('id')->all()) : [];
         RecordComputed::$threshold = $type === RecordType::Attendance ? RecordComputed::thresholdFromSettings() : null;
     }
 

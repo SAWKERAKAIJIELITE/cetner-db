@@ -61,7 +61,8 @@ class RecordReviewFlowTest extends TestCase
             ->assertJsonPath('data.0.employee.full_name', 'أحمد محمد الخطيب')
             ->assertJsonPath('data.0.fields.amount.value', '15000.00')
             ->assertJsonPath('data.0.fields.movement_type_id.display', 'مكافأة')
-            ->assertJsonPath('data.0.computed', ['year' => 2026, 'month' => 3, 'days' => null])
+            ->assertJsonPath('data.0.computed', ['year' => 2026, 'month' => 3, 'days' => null, 'file_fields' => [], 'applied_to_file_at' => null, 'file_change_set_id' => null])
+            ->assertJsonPath('data.0.fields.movement_type_id.item', ['id' => $this->itemId('movement_type', 'reward'), 'name_ar' => 'مكافأة', 'archived' => false])
             ->assertJsonPath('data.0.created_by.id', $entry->id);
         $this->getJson(self::API.'/records/movements?year=2025')->assertJsonCount(0, 'data');
 

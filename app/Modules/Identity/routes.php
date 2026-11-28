@@ -31,7 +31,8 @@ Route::middleware(['auth:staff', 'staff.active'])->group(function () {
         Route::delete('roles/{role:slug}/permissions/{permission:slug}', [AccessController::class, 'removePermission']);
 
         Route::get('users', [StaffUserController::class, 'index']);
-        Route::post('users', [StaffUserController::class, 'store']);
+        // Adding a staff user: the hiring system's path (D-047).
+        Route::post('new', [StaffUserController::class, 'store']);
         Route::get('users/{user}', [StaffUserController::class, 'show'])->whereUuid('user');
         Route::put('users/{user}/role', [StaffUserController::class, 'setRole'])->whereUuid('user');
         Route::post('users/{user}/deactivate', [StaffUserController::class, 'deactivate'])->whereUuid('user');

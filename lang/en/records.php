@@ -32,4 +32,7 @@ return [
     'payment_over_remaining' => 'The payment is more than what is left of the debt (:remaining).',
     'payments_over_debt' => 'The payments exceed what is left of the debt: the submission is refused.',
     'debt_has_payments' => 'The debt has payments: remove them first.',
+    'movement_target_unused' => '":field" is not used by this type of movement.',
+    'movement_target_required' => 'This movement needs ":field": the employee\'s file is updated from it.',
+    'movement_target_one_of' => 'A promotion needs the new position or the new job title.',
 ];

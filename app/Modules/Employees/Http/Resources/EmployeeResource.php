@@ -2,6 +2,7 @@
 
 namespace App\Modules\Employees\Http\Resources;
 
+use App\Modules\Documents\Support\DocumentSlots;
 use App\Modules\Employees\Enums\ChangeSetStatus;
 use App\Modules\Employees\Enums\Cycle;
 use App\Modules\Employees\Models\Employee;
@@ -48,7 +49,7 @@ class EmployeeResource extends JsonResource
 
         $fields = [];
 
-        foreach (FieldDefinitions::all() as $key => $definition) {
+        foreach (FieldDefinitions::fields() as $key => $definition) {
             $value = FieldValues::current($this->resource, $key);
             $labels->add($key, $value);
             $fields[$key] = [$definition, $value];
@@ -63,6 +64,8 @@ class EmployeeResource extends JsonResource
             'full_name' => $this->fullName(),
             'created_at' => $this->created_at?->toIso8601String(),
             'activated_at' => $this->activated_at?->toIso8601String(),
+            /** «تاريخ التقديم»: the day the file was approved (owner, 25 Nov), a Damascus date. */
+            'application_date' => $this->activated_at?->setTimezone(config('hr.timezone'))->format('Y-m-d'),
             /** The identity lock (D-034): once locked, the six identity fields are never changed. */
             'identity' => [
                 'locked' => IdentityLock::isLocked($this->resource),
@@ -79,6 +82,8 @@ class EmployeeResource extends JsonResource
                 'locked' => $pair[0]->identity && IdentityLock::isLocked($this->resource) && $pair[1] !== null,
                 'value' => $pair[1],
                 'display' => $labels->display($key, $pair[1]),
+                /** A list or unit value as `{id, name_ar, archived}` (the hiring system's shape); null otherwise. */
+                'item' => $labels->ref($key, $pair[1]),
                 /** @var list<array{change_set_id: string, value: string|int|float|bool|null, display: ?string, submitted_by: StaffUserSummaryResource, submitted_at: string, needs_identity_review: bool}> */
                 'pending' => array_map(fn ($p) => ['display' => $labels->display($key, $p['value'])] + $p, $pending[$key] ?? []),
             ]),
@@ -96,6 +101,8 @@ class EmployeeResource extends JsonResource
                 'current_work_unit_path' => $labels->unitPath($this->current_work_unit_id ?? $this->org_unit_id),
                 /** «عليه ديون» and «إجمالي الديون المتبقية», from the debts record (D-044). */
                 ...DebtTotals::of($this->id),
+                /** Of the 13 attachments («الوثائق والمرفقات»), how many have a current approved file (D-049). */
+                'documents_attached' => DocumentSlots::attachedCount($this->id),
             ],
             'completeness' => (float) $this->completeness,
             /** The banner's «61 / 73»: counted fields filled, and counted fields (the unit counts as levels 1 and 2). */

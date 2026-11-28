@@ -74,6 +74,12 @@ enum RecordType: string
         return $this !== self::Payments;
     }
 
+    /** Columns the actions keep beside the record's fields: when a movement updated the file (D-048). */
+    public function bookkeeping(): array
+    {
+        return $this === self::Movements ? ['applied_to_file_at', 'file_change_set_id'] : [];
+    }
+
     /** The columns the database computes, never written. */
     public function generated(): array
     {

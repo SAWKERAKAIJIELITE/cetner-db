@@ -44,6 +44,14 @@ final class AuditEvents
         'records.change_approved' => 'اعتماد إضافة أو تصحيح أو حذف في السجلات',
         'records.change_rejected' => 'ردّ إضافة أو تصحيح أو حذف في السجلات',
         'records.change_withdrawn' => 'سحب إضافة أو تصحيح أو حذف في السجلات',
+        'documents.uploaded' => 'رفع وثيقة لملف موظف',
+        'documents.approved' => 'اعتماد وثيقة لملف موظف',
+        'documents.rejected' => 'ردّ وثيقة مرفوعة',
+        'documents.withdrawn' => 'سحب وثيقة مرفوعة',
+        'documents.removed' => 'إزالة وثيقة حالية من ملف موظف',
+        'documents.downloaded' => 'تنزيل وثيقة أو عرضها',
+        'reports.form_printed' => 'طباعة استمارة موظف (PDF)',
+        'exports.downloaded' => 'تصدير بيانات إلى Excel',
     ];
 
     public static function label(string $event): string

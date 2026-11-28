@@ -186,4 +186,28 @@ final class FieldCatalogue
     {
         return array_keys(array_filter(self::FIELDS, fn (array $f) => $f['identity']));
     }
+
+    /**
+     * The `values` of a request as a PHPDoc array shape, for the API document (Scramble reads it from the request's
+     * rules): every field with its type, the given ones required. A test keeps the requests' copies equal to it.
+     *
+     * @param  list<string>  $required
+     * @param  string  $indent  the docblock's indentation in the request
+     */
+    public static function valuesShape(array $required = [], string $indent = '            '): string
+    {
+        $lines = [];
+
+        foreach (self::FIELDS as $key => $field) {
+            $type = match ($field['type']) {
+                'bool' => 'bool',
+                'int', 'year', 'list', 'org_unit' => 'int',
+                'decimal', 'money', 'rate' => 'float|string',
+                default => 'string',
+            };
+            $lines[] = in_array($key, $required, true) ? "{$key}: {$type}" : "{$key}?: {$type}|null";
+        }
+
+        return "array{\n{$indent} *     ".implode(",\n{$indent} *     ", $lines).",\n{$indent} * }";
+    }
 }

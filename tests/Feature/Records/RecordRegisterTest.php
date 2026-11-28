@@ -11,9 +11,9 @@ class RecordRegisterTest extends TestCase
     public function test_a_register_finds_by_employee_unit_period_and_type_and_keeps_its_filters_in_the_links(): void
     {
         $this->actingAsStaff($this->admin());
-        $top = $this->postJson(self::API.'/settings/org-units', ['name' => 'القيادة'])->json('data.id');
-        $branch = $this->postJson(self::API.'/settings/org-units', ['name' => 'الفرع', 'parent_id' => $top])->json('data.id');
-        $other = $this->postJson(self::API.'/settings/org-units', ['name' => 'مديرية أخرى'])->json('data.id');
+        $top = $this->postJson(self::API.'/settings/org-units', ['name_ar' => 'القيادة'])->json('data.id');
+        $branch = $this->postJson(self::API.'/settings/org-units', ['name_ar' => 'الفرع', 'parent_id' => $top])->json('data.id');
+        $other = $this->postJson(self::API.'/settings/org-units', ['name_ar' => 'مديرية أخرى'])->json('data.id');
 
         $a = $this->employeeFile(['first_name' => 'فاطمة', 'personal_number' => '812001', 'org_unit_id' => $branch]);
         $b = $this->employeeFile(['first_name' => 'سامي', 'personal_number' => '812002', 'org_unit_id' => $other]);
@@ -37,7 +37,7 @@ class RecordRegisterTest extends TestCase
 
         $list('q=فاطمه')->assertJsonCount(2, 'data');
         $list('q=812002')->assertJsonCount(2, 'data');
-        $list("org_unit_id={$top}")->assertJsonCount(2, 'data')->assertJsonPath('data.0.employee.org_unit', 'القيادة / الفرع');
+        $list("org_unit_id={$top}")->assertJsonCount(2, 'data')->assertJsonPath('data.0.employee.org_unit.name_ar', 'القيادة / الفرع');
         $list("org_unit_id={$top}&include_sub_units=0")->assertJsonCount(0, 'data');
         $list('from=2026-02-01&to=2026-03-31')->assertJsonCount(2, 'data');
         $list('type_id='.$this->itemId('movement_type', 'reward'))->assertJsonCount(3, 'data');

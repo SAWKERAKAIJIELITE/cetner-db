@@ -14,6 +14,9 @@ final class AuditTrail
 {
     public const SECURITY_PREFIXES = ['access.', 'device.', 'auth.'];
 
+    /** Events of other areas that are about access: reading an employee's documents (D-049). */
+    public const SECURITY_EVENTS = ['documents.downloaded'];
+
     public static function record(string $event, ?StaffUser $actor, array $context = []): AuditEvent
     {
         $category = self::categoryOf($event);
@@ -44,6 +47,10 @@ final class AuditTrail
 
     public static function categoryOf(string $event): string
     {
+        if (in_array($event, self::SECURITY_EVENTS, true)) {
+            return 'security';
+        }
+
         foreach (self::SECURITY_PREFIXES as $prefix) {
             if (str_starts_with($event, $prefix)) {
                 return 'security';

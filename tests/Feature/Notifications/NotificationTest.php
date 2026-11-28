@@ -55,7 +55,7 @@ class NotificationTest extends TestCase
             ->assertJsonPath('data.employees.monthly_overdue', 2);
 
         $this->actingAsStaff($this->staffUser(StaffRole::Supervisor))->getJson(self::API.'/badges')
-            ->assertJsonPath('data.reviews', ['employee_changes' => 1, 'record_changes' => 1, 'total' => 2])
+            ->assertJsonPath('data.reviews', ['employee_changes' => 1, 'record_changes' => 1, 'documents' => 0, 'total' => 2])
             ->assertJsonPath('data.identity', null)->assertJsonPath('data.mine.pending', 0);
 
         $this->actingAsStaff($this->admin())->getJson(self::API.'/badges')

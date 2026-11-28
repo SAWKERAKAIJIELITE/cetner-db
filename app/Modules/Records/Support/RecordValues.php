@@ -49,11 +49,13 @@ final class RecordValues
         $validator = Validator::make(['v' => $prepared], $rules, [], $names);
         $validator->after(function ($validator) use ($prepared, $fields) {
             foreach ($prepared as $key => $value) {
-                if ($value === null || $validator->errors()->has('v.'.$key) || $fields[$key]['type'] !== 'list') {
+                if ($value === null || $validator->errors()->has('v.'.$key) || ! in_array($fields[$key]['type'], ['list', 'unit'], true)) {
                     continue;
                 }
 
-                if (! DB::table(ListCatalogue::table($fields[$key]['list']))->where('id', (int) $value)->whereNull('archived_at')->exists()) {
+                $table = $fields[$key]['type'] === 'unit' ? 'org_units' : ListCatalogue::table($fields[$key]['list']);
+
+                if (! DB::table($table)->where('id', (int) $value)->whereNull('archived_at')->exists()) {
                     $validator->errors()->add('v.'.$key, __('records.list_item_unavailable', ['field' => $fields[$key]['label']]));
                 }
             }
@@ -96,6 +98,11 @@ final class RecordValues
                 $errors[$prefix.'.ends_on'] = __('records.ends_before_start');
             } elseif ($v('starts_on') !== null && CarbonImmutable::parse($v('starts_on'))->diffInDays(CarbonImmutable::parse($v('ends_on'))) >= 400) {
                 $errors[$prefix.'.ends_on'] = __('records.period_too_long');
+            }
+
+            // What the movement makes of the file, by its type (D-048).
+            if ($v('movement_type_id') !== null) {
+                $errors += MovementEffects::check((int) $v('movement_type_id'), $record, $prefix);
             }
 
             // A leave is a period: its days are counted from it (D-042, owner 25 Nov).
@@ -174,6 +181,7 @@ final class RecordValues
             'int' => [$required, 'integer', 'between:'.$field['min'].','.$field['max']],
             'days' => [$required, 'numeric', 'decimal:0,1', 'between:'.$field['min'].','.$field['max']],
             'debt' => [$required, 'uuid'],
+            'unit' => [$required, 'integer', 'min:1'],
             'decimal' => [$required, 'numeric', 'decimal:0,'.$field['scale'], 'between:'.$field['min'].','.$field['max']],
             'money' => [$required, 'numeric', 'decimal:0,2', ($field['positive'] ?? false) ? 'gt:0' : 'min:0', 'max:999999999999'],
             'list' => [$required, 'integer', 'min:1'],
@@ -187,7 +195,7 @@ final class RecordValues
         }
 
         return match ($field['type']) {
-            'int', 'list' => (int) $value,
+            'int', 'list', 'unit' => (int) $value,
             'days' => (float) round((float) $value, 1),
             'money' => number_format((float) $value, 2, '.', ''),
             'decimal' => number_format((float) $value, $field['scale'], '.', ''),

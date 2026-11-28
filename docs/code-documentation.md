@@ -1,8 +1,9 @@
 # HR Backend: Technical Documentation (نظام إدارة القوى البشرية)
 
-Status: **Step 4.1** (Step 1: foundation, staff identity and roles, device-bound login, access and user management,
+Status: **Step 6** (Step 1: foundation, staff identity and roles, device-bound login, access and user management,
 audit log; Step 2: settings; Step 3: the employee's file with review, history, identity lock and cycles; Step 4: the
-four records with their review and the status report's year).
+four records with their review and the status report's year; Step 5: the employees' documents; Step 6: the forms,
+the dashboards and the exports).
 Updated at the end of every step.
 
 Audience: developers joining or reviewing the backend.
@@ -32,8 +33,8 @@ desktop app only (React + Electron, OD-3) and log in from approved devices (D-01
 | 2 | Settings | Done | «الإعدادات»: 28 managed lists (yes/no and the update cycle are not lists), the six-level organisational structure, holidays, the branch settings with the four review windows |
 | 3 | Employees | Done | «قاعدة بيانات الموظفين» and «دليل الحقول»: the 159 fields with the sheet's checks, field definitions per update cycle, completeness and missing fields, review periods per cycle, change history, the supervisor's review (D-023, OD-8) |
 | 4 | Records | Done | «سجل الحركات», «سجل الدوام الشهري», «سجل السلوك الوظيفي», «سجل الديون» with the same review, batches for a month's attendance, the status report's year («مؤشرات السنة»), the file's debt columns |
-| 5 | Documents | Planned | The 13 attachments (photo, ID, family statement, certificate, …) as uploaded files instead of links |
-| 6 | Views and reports | Planned | «عرض الفرد» and the three forms as PDF, «داش بورد الموظفين», «داش بورد الحركات», Excel exports |
+| 5 | Documents | Done | The 13 attachments (photo, ID, family statement, certificate, …) as uploaded files instead of links, reviewed, with their history; the conduct record's document; the five counted ones in the completeness (D-049) |
+| 6 | Reports | Done | «عرض الفرد» (the file) and the three forms on screen and as PDF (D-050); «لوحة التحكم», «داش بورد الموظفين», «داش بورد الحركات» (D-051); Excel exports of the employees, the registers and the movements summary (D-052) |
 | 7 | Import and deployment | Planned | Importing existing workbooks (staged, reviewed, all-or-nothing); the on-premises deployment guide |
 | later | Integration | Deferred | The recruitment system (OD-6) |
 
@@ -42,6 +43,7 @@ desktop app only (React + Electron, OD-3) and log in from approved devices (D-01
 - PHP 8.2+ (developed on 8.3) with `pdo_pgsql`, `mbstring`, `openssl`, `intl`
 - Laravel 12, PostgreSQL 16, Laravel Sanctum 4 (personal access tokens)
 - Scramble (API documentation)
+- mPDF 8 (the forms as PDF, right to left) and OpenSpout 4 (Excel, streamed), from Step 6
 - PostgreSQL features used: UUID, `macaddr`, `inet`, `jsonb`, `text[]` with GIN indexes, CHECK constraints, partial
   unique indexes, PL/pgSQL triggers
 - PHPUnit through `php artisan test`; Pint for the code style
@@ -152,16 +154,33 @@ app/
     │   │                   EmployeeQuery, ValueLabels
     │   └── routes.php
     ├── Records/
-    │   ├── Actions/        SubmitRecordChanges (one or a batch), ApplyRecordChangeSet, DecideRecordChangeSet
-    │   ├── Console/        GenerateDemoRecordsCommand (records:generate-demo, development only)
-    │   ├── Database/       Migrations (2)
+    │   ├── Actions/        SubmitRecordChanges (one or a batch), ApplyRecordChangeSet, DecideRecordChangeSet,
+    │   │                   ApplyMovementToFile
+    │   ├── Console/        ApplyDueMovementsCommand (records:apply-due-movements), GenerateDemoRecordsCommand
+    │   │                   (records:generate-demo, development only)
+    │   ├── Database/       Migrations (3)
     │   ├── Enums/          RecordType, RecordAction, DebtStatus
     │   ├── Http/           Controllers (Record, RecordChange, EmployeeRecords), Requests, Resources
     │   ├── Models/         EmployeeRecord (base), EmployeeMovement, EmployeeAttendance, EmployeeConductRecord,
     │   │                   EmployeeDebt, EmployeeDebtPayment, RecordChangeSet, RecordChangeItem
     │   ├── Support/        RecordCatalogue (each record's columns), RecordValues, RecordComputed, RecordLabels,
     │   │                   RecordPage, RecordRegister, RecordSummary, DebtTotals, PlannedDays, PlannedMonth,
-    │   │                   LeaveTypes, RecordChange
+    │   │                   LeaveTypes, MovementEffects, RecordChange
+    │   └── routes.php
+    ├── Documents/
+    │   ├── Actions/        UploadDocument, DecideDocument (approve, reject, withdraw, remove)
+    │   ├── Database/       Migrations (1)
+    │   ├── Http/           DocumentController, Requests, Resources (Document, DocumentKind, DocumentSlot)
+    │   ├── Models/         EmployeeDocument
+    │   ├── Support/        DocumentCatalogue (the 13 kinds and the conduct document), DocumentStorage,
+    │   │                   DocumentSlots, DocumentSlot, DocumentKind, DocumentQueries
+    │   └── routes.php
+    ├── Reports/
+    │   ├── Forms/          FormCatalogue, EmployeeForm, FormPdf
+    │   ├── Exports/        XlsxDownload, EmployeesExport, RecordsExport, MovementsSummaryExport
+    │   ├── Http/           DashboardController, FormController, ExportController, Requests, Resources
+    │   ├── Support/        EmployeeScope, ListItems, Tile, OverviewReport, EmployeesDashboard, MovementsDashboard,
+    │   │                   MovementsByEmployee, ReportPeriod
     │   └── routes.php
     ├── Notifications/
     │   ├── Console/        RemindExpiringContractsCommand (employees:remind-expiring-contracts)
@@ -171,7 +190,7 @@ app/
     │   ├── Support/        Badges
     │   └── routes.php
     └── Audit/
-        ├── Database/Migrations (1)
+        ├── Database/Migrations (2)
         ├── Http/            AuditEventController, AuditEventIndexRequest, AuditEventResource
         ├── Models/AuditEvent.php
         ├── Support/         AuditTrail (the writer), AuditEvents (Arabic labels)
@@ -331,7 +350,7 @@ Interactive documentation: `/docs/api` (local only, D-021).
 | POST | `/roles/{role}/permissions` | `permissions: [slug]` |
 | DELETE | `/roles/{role}/permissions/{permission}` | Remove one (404 when not held) |
 | GET | `/users` | By username; `q` (username, names, personal number in any digits), `role`, `is_active`, `per_page` |
-| POST | `/users` | `username`, `first_name`, `last_name`, `personal_number`, `role`, `is_active` (optional), `password` + `password_confirmation`. 201 |
+| POST | `/new` | Add a staff user (the hiring system's path, D-047): `username`, `first_name`, `last_name`, `personal_number`, `role`, `is_active` (optional), `password` + `password_confirmation`. 201 |
 | GET | `/users/{user}` | One user with the effective permissions |
 | PUT | `/users/{user}/role` | `role`: replaces the one role |
 | POST | `/users/{user}/deactivate` | `reason` (not yourself) |
@@ -553,16 +572,16 @@ Base path `/api/v1/staff/settings`. Reading: any signed-in user. Changing: `sett
 
 | Method | Path | Purpose |
 | ------ | ---- | ------- |
-| GET | `/lists` | Every list with its active items in order; `include_archived=1` adds the archived ones |
+| GET | `/lists` | Every list (`key`, `name_ar`, `used_by`) with its active items in order (`id`, `name_ar`, `code`, `sort_order`, `archived`, `archived_at`, `usage_count`); `include_archived=1` adds the archived ones |
 | GET | `/lists/{key}` | One list (same parameter) |
-| POST | `/lists/{key}/items` | `label`, `sort_order` (optional). 201 |
-| PUT | `/lists/{key}/items/{id}` | `label` and/or `sort_order` |
+| POST | `/lists/{key}/items` | `name_ar`, `sort_order` (optional). 201 |
+| PUT | `/lists/{key}/items/{id}` | `name_ar` and/or `sort_order` |
 | POST | `/lists/{key}/items/{id}/archive` | Not offered any more (system items: 422) |
 | POST | `/lists/{key}/items/{id}/restore` | Offered again |
 | PUT | `/lists/{key}/order` | `item_ids`: every active item, in order |
-| GET | `/org-units` | Every unit: `id`, `parent_id`, `level`, `name`, `path`, `path_ids`, `path_label`, `archived`; `include_archived=1` |
-| POST | `/org-units` | `name`, `parent_id` (absent: a top-level unit). 201 |
-| PUT | `/org-units/{id}` | `name` |
+| GET | `/org-units` | Every unit: `id`, `parent_id`, `level`, `name_ar`, `path`, `path_ids`, `path_label`, `archived`, `active_employees` (with the units under it), `direct_active_employees`; `include_archived=1` |
+| POST | `/org-units` | `name_ar`, `parent_id` (absent: a top-level unit). 201 |
+| PUT | `/org-units/{id}` | `name_ar` |
 | POST | `/org-units/{id}/archive` | Once its children are archived |
 | POST | `/org-units/{id}/restore` | Under an active parent |
 | GET | `/holidays` | By start date; `year` for those touching a year |
@@ -622,8 +641,8 @@ not changed, the lock is not undone, and the fingerprint changes only when an em
 ### 10.2 The fields
 
 125 input fields in 18 sections; 67 count for completeness, and the unit counts twice, as the workbook's levels 1
-and 2 (`org_unit_level_2` among the missing fields when the unit is not at level 2 or below): 68 counted, 73 with the
-five documents of Step 5; 6 are the identity fields (الرقم الذاتي، الرقم الوطني،
+and 2 (`org_unit_level_2` among the missing fields when the unit is not at level 2 or below), and the five counted
+documents (section 13.2): 73 counted; 6 are the identity fields (الرقم الذاتي، الرقم الوطني،
 الاسم، اسم الأب، اسم الأم، العائلة), locked once the administrator approves them (D-034). By cycle: once 32,
 monthly 26, quarterly 26, semi-annual 29, annual 12. The full list with types, limits, lists and flags is
 `GET /field-definitions` (and `FieldCatalogue::FIELDS`).
@@ -642,7 +661,8 @@ the field in Arabic. A list item or unit must be active (an archived one already
 | General manager | no | no | no | no | no |
 | Administrator | at once (locks) | at once | at once | yes, identity too (locks), not their own | yes |
 
-- A new file needs «الرقم الذاتي» and the three names (Step 4.1, D-047).
+- A new file needs «الرقم الذاتي», «الرقم الوطني» and the three names (D-047; the national number: owner, 25 Nov).
+- An approved movement updates the file as a change «تطبيق حركة» (D-048).
 - Only real changes are kept; nothing changed → 422.
 - Identity lock (D-034): any identity field → `needs_identity_review`, approved by `identity.review` only, which locks
   the identity. Once locked, a non-empty identity value is refused for everyone (422, and the trigger); an empty one
@@ -661,8 +681,8 @@ Base path `/api/v1/staff`.
 | GET | `/field-definitions` | signed in | The guide: `key`, `label`, `section`, `workbook_column`, `type`, `list`, `min`, `max`, `cycle`, `counts_for_completeness`, `identity` |
 | PUT | `/field-definitions/{key}` | `settings.manage` | `counts_for_completeness` and/or `cycle`; every active file's completeness follows |
 | GET | `/employees` | `employees.view` | 25 per page. `q` (a name in any spelling, or the start of a personal or national number), `org_unit_id` (+ `include_sub_units`, default true), `employee_status_id`, `job_status_id`, `work_schedule_id`, `position_level_id`, `org_stage_id`, `gender_id`, `file_status` (default active), `contract_ends_within_days`, `overdue_cycle`, `completeness_below`, `identity_locked`, `has_debts`, `has_pending`, `sort` (`name`, `personal_number`, `completeness`, `contract_ends_on`, `created_at`), `direction`, `per_page` 5 to 100. Row: numbers, name, unit path, statuses, contract end and days left, completeness, missing count, overdue cycles, pending count |
-| POST | `/employees` | `employees.create` | `values` (field => value), `note`. 201 with the change set (pending, or applied for a reviewer) |
-| GET | `/employees/{id}` | `employees.view` | `identity` (locked, when, by whom), `fields` (each: label, section, cycle, type, identity, `locked`, `value`, `display`, `pending` [value, display, author, time, identity]), `computed` (full name, age, service years with `service_started_on` and `service_ended_on`, contract days left, unit paths, `has_debts`, `total_remaining`, `open_debts`, `overdue_debts`), `completeness` with `completeness_filled` / `completeness_counted`, `missing_fields` by cycle, `warnings`, `reviews` (per cycle: `cycle_label`, period, last confirmation, `days_since`, `window`, due date, overdue, current period done), `pending_change_sets` |
+| POST | `/employees` | `employees.create` | `values` (field => value; «الرقم الذاتي», «الرقم الوطني» and the three names required), `note`. 201 with the change set (pending, or applied for a reviewer). The document lists every field with its type (`StoreEmployeeRequest`, generated from `FieldCatalogue::valuesShape()`; a test keeps it equal) |
+| GET | `/employees/{id}` | `employees.view` | `application_date` («تاريخ التقديم»: the day the file was approved), `identity` (locked, when, by whom), `fields` (each: label, section, cycle, type, identity, `locked`, `value`, `display`, `item` (a list or unit value as `{id, name_ar, archived}`), `pending` [value, display, author, time, identity]), `computed` (full name, age, service years with `service_started_on` and `service_ended_on`, contract days left, unit paths, `has_debts`, `total_remaining`, `open_debts`, `overdue_debts`), `completeness` with `completeness_filled` / `completeness_counted`, `missing_fields` by cycle, `warnings`, `reviews` (per cycle: `cycle_label`, period, last confirmation, `days_since`, `window`, due date, overdue, current period done), `pending_change_sets` |
 | PATCH | `/employees/{id}` | `employees.update` | `values`, `note`. 201 with the change set |
 | POST | `/employees/{id}/reviews` | `employees.update` | `cycle` (monthly, quarterly, semi_annual, annual), `values` (that cycle's fields, optional), `note`. 201 |
 | POST | `/employees/{id}/identity/lock` | `identity.review` | Confirm and lock the identity (needs the three names, no identity change waiting); never undone |
@@ -697,6 +717,7 @@ The values themselves are in the change items, not in the audit log.
 | `employees:verify-identity` | 02:30 | Recomputes every locked identity's fingerprint (D-038); a mismatch is a critical log line and an audit event, and the command fails |
 | `model:prune` | 03:00 | Login challenges expired for a day |
 | `sanctum:prune-expired --hours=48` | 03:10 | Tokens expired for two days |
+| `records:apply-due-movements` | 00:10 | Approved movements whose day has come update their files (D-048) |
 | `employees:remind-expiring-contracts` | 06:00 | Contracts ending within 30 days, told once (D-046) |
 
 The fingerprint is HMAC-SHA256 of the six identity values with `HR_IDENTITY_HASH_KEY` (`.env`; APP_KEY if unset).
@@ -726,7 +747,7 @@ author of the addition), `approved_by`, `deleted_at` and `deleted_by` (both or n
 
 | Table | Workbook | Columns | Checks |
 | ----- | -------- | ------- | ------ |
-| `employee_movements` | سجل الحركات | `occurred_on`, `movement_type_id`, `description`, `identified_by` (المعرف بها), `entity`, `course_mark`, `amount`, `starts_on`, `ends_on`, `days` (generated: the period's calendar days, both ends included), `status` (الحالة, text) | both ends or neither, in order, under 400 days; amount ≥ 0; marks 0–1000 |
+| `employee_movements` | سجل الحركات | `occurred_on`, `movement_type_id`, `description`, `identified_by` (المعرف بها), `entity`, `course_mark`, `amount`, `starts_on`, `ends_on`, `days` (generated: the period's calendar days, both ends included), `status` (الحالة, text); what the file becomes (D-048): `new_org_unit_id`, `new_job_status_id`, `new_position_level_id`, `new_job_title_id`; `applied_to_file_at`, `file_change_set_id` | both ends or neither, in order, under 400 days; amount ≥ 0; marks 0–1000; once applied to the file, it stays applied (trigger) |
 | `employee_attendance` | سجل الدوام الشهري | `year`, `month`, `planned_days`, `attended_days` (one decimal), `absent_days` (generated), `exceptional_skills` | year 2000–2100, month 1–12; planned ≤ the month's days; attended ≤ planned; one per employee and month among kept rows (partial unique index); the month fixed (trigger) |
 | `employee_conduct_records` | سجل السلوك الوظيفي | `occurred_on`, `conduct_type_id`, `subject`, `reported_by`, `decision`, `decision_number`, `decision_on`, `conduct_status_id`, `document_link` | |
 | `employee_debts` | سجل الديون | `creditor`, `debt_type_id`, `reason`, `incurred_on`, `amount`, `paid_amount` (paid when entered), `payments_total` (the trigger's), `monthly_installment`, `due_on`, `remaining_amount` (generated: amount − paid − payments) | amount > 0; paid ≥ 0; paid + payments ≤ amount; installment ≥ 0; `payments_total` written by the payments' trigger only |
@@ -753,6 +774,10 @@ formula columns: a dated record's year and month, a movement's days; a month's a
 `high_absence` (≥ the branch's `high_absence_rate`); a debt's `paid_total`, `payments_total`, `remaining_amount`,
 `installments_left` and `status` with `status_label` (paid, overdue, outstanding, as of today in Damascus).
 `LeaveTypes` says which movement types are leaves (the four codes, or a name beginning with «إجازة»).
+`MovementEffects` says what each movement type makes of the file (D-048), which targets it takes and needs, and
+`ApplyMovementToFile` applies it: at approval when its day has come, otherwise `records:apply-due-movements` that
+morning; once; a later movement already taken wins. A movement's `computed` has `file_fields`, `applied_to_file_at`
+and `file_change_set_id`.
 
 `RecordRegister` builds a register: the approved records and, unless `review_status=approved`, the waiting
 additions read from their change items with the same columns, in one UNION ALL (D-041). The waiting half takes the
@@ -830,7 +855,7 @@ morph, `data` jsonb, `read_at`), sent by `StaffNotice` subclasses inside the tra
 
 | Kind | When | To | Details |
 | ---- | ---- | -- | ------- |
-| `change_rejected` | a submission of the file or of a record is refused | its author | `area` (employees, records), `change_set_id`, `record_type`, `employee_id`, `employee_name`, `reason`, `reviewer_name` |
+| `change_rejected` | a submission of the file or of a record, or an uploaded document, is refused | its author | `area` (employees, records, documents; for a document `change_set_id` is the upload's id), `change_set_id`, `record_type`, `employee_id`, `employee_name`, `reason`, `reviewer_name` |
 | `contract_ending_soon` | `employees:remind-expiring-contracts`, 06:00 Damascus: contracts ending within 30 days, once per file and end date | active users with `employees.update`, not the administrator or the general manager | `employee_id`, `personal_number`, `employee_name`, `ends_on`, `days_left` |
 
 | Method | Path | Notes |
@@ -839,14 +864,185 @@ morph, `data` jsonb, `read_at`), sent by `StaffNotice` subclasses inside the tra
 | GET | `/notifications/unread-count` | `{unread}` |
 | POST | `/notifications/{id}/read` | One of mine (404 for another's) |
 | POST | `/notifications/read-all` | `{marked}` |
-| GET | `/badges` | `notifications.unread`; `reviews` (with `entries.review`: `employee_changes`, `record_changes`, `total`, not one's own); `identity` (with `identity.review`: `to_review`, `to_lock`); `mine.pending`; `employees` (with `employees.view`: `contracts_ending_soon`, `monthly_overdue`); null for a section not seen |
+| GET | `/badges` | `notifications.unread`; `reviews` (with `entries.review`: `employee_changes`, `record_changes`, `documents`, `total`, not one's own); `identity` (with `identity.review`: `to_review`, `to_lock`); `mine.pending` (my waiting submissions and uploads); `employees` (with `employees.view`: `contracts_ending_soon`, `monthly_overdue`); null for a section not seen |
 
 Any signed-in active staff user; nobody sees another's.
 
-## 13. Testing
+## 13. Documents module (Step 5, D-049)
+
+`app/Modules/Documents`: the workbook's 13 attachments as uploaded files, and a conduct record's document.
+
+### 13.1 Table and storage
+
+**`employee_documents`**: one row per upload. `id` (uuid), `employee_id`, `kind`, `conduct_record_id` (only for
+`conduct_document`), `status` (pending, approved, rejected, withdrawn), `disk`, `path` (unique), `original_name`,
+`mime`, `size_bytes`, `sha256`, `note`, `uploaded_by`, `uploaded_at`, `self_approved`, `reviewed_by`, `reviewed_at`,
+`review_note`, `superseded_at` and `superseded_by_id` (both or neither), `removed_at`, `removed_by`,
+`removal_reason`, `content_purged_at`, timestamps.
+
+- CHECKs: the 14 kinds; a conduct record exactly for `conduct_document`; the four types; 0 < size ≤ 50 MB (the API
+  allows 5); a hex SHA-256; decided with a reviewer (withdrawn without); a reason for a refusal; `self_approved`
+  exactly when the reviewer is the uploader; only an approved upload superseded or removed, removed with a reason;
+  purged only when refused, withdrawn or removed.
+- Partial unique indexes: one current file (approved, not superseded, not removed) per employee and kind, and one
+  per conduct record.
+- Trigger `employee_documents_guard`: no DELETE (and no TRUNCATE); what was uploaded (employee, kind, record, disk,
+  path, name, type, size, hash, note, uploader, time) never changes; a decision is taken once; superseded, removed
+  and purged once.
+- The content is on the `documents` disk (`config/filesystems.php`: `storage/app/documents`, private, not served;
+  `HR_DOCUMENTS_DISK` for another disk, `HR_DOCUMENTS_MAX_KB` for the limit, 5120). `storage/app` is not in git. A
+  refused, withdrawn or removed upload's file is deleted after the commit; a superseded one is kept.
+- The tests use `Storage::fake('documents')`: their files go to `storage/framework/testing/disks/documents` (git
+  ignored, emptied by the next test run), never to `storage/app/documents`, which only real uploads fill.
+- The migration `2026_11_29_000050` (Audit) lets `documents.downloaded` be a security event in
+  `audit_events_category_follows_event`.
+
+### 13.2 Kinds and completeness
+
+| Key | Label | Workbook | Column | Cycle | Counts |
+| --- | ----- | -------- | ------ | ----- | ------ |
+| `identity_copy` | صورة الهوية | رابط الهوية | AL | once | ✔ |
+| `contract_terms` | وثيقة أحكام المتعاقد | رابط وثيقة أحكام المتعاقد | AM | once | |
+| `security_form` | الإستمارة الأمنية | رابط الاستمارة الأمنية | AN | once | ✔ |
+| `signature_form` | نموذج التوقيع | رابط صورة التوقيع | AO | once | |
+| `course_certificates` | شهادات الدورات | رابط الدورات | EB | semi-annual | |
+| `portrait` | الصورة الشخصية | رابط الصورة الشخصية | EI | annual | ✔ |
+| `family_statement` | البيان العائلي | رابط البيان العائلي | EJ | annual | ✔ |
+| `practical_certificate` | الشهادة العملية | رابط الشهادة | EK | annual | ✔ |
+| `graduation_certificate` | مصدقة التخرج | رابط مصدقة التخرج | EL | annual | |
+| `contract_copy` | صورة العقد الوظيفي | رابط صورة العقد | EM | annual | |
+| `cv` | السيرة الذاتية | رابط السيرة الذاتية | EN | annual | |
+| `inquiry_record` | نشرة الإستعلامات | رابط نشرة الاستعلامات | EO | annual | |
+| `sham_cash_copy` | صورة حساب شام كاش | صورة حساب الشام كاش | EP | annual | |
+| `conduct_document` | وثيقة القيد السلوكي | (the conduct record's «رابط الوثيقة») | | | |
+
+`FieldDefinitionsSeeder` adds the 13 after the 125 fields as definitions of type `document` (section «الوثائق
+والمرفقات»): their cycle and ✔ are set once and then belong to the settings managers (`PUT /field-definitions/{key}`).
+`FieldDefinitions::fields()` is the guide without them (the file's `fields`). `EmployeeDerived` counts a counted
+document as filled when the employee has a current file of its kind; approving, replacing or removing one
+recomputes an active file's completeness. The workbook's total is 73.
+
+### 13.3 Rules
+
+| Who | Uploads | Approves, refuses | Withdraws | Removes a current one | Reads, downloads |
+| --- | ------- | ----------------- | --------- | --------------------- | ---------------- |
+| Data entry | waits | no | their own | no | yes |
+| Supervisor | no | yes, not their own | | no | yes |
+| General manager | no | no | | no | yes |
+| Administrator | at once | yes, not their own | | yes, with a reason | yes |
+
+- Uploads go to a file waiting for approval or approved; not to a refused or withdrawn file.
+- The type is the content's (`finfo`): PDF, JPEG, PNG, WebP; anything else → 422 whatever its name. The download
+  name keeps the uploaded name with the real extension.
+- The same content (SHA-256) as the kind's current file, or as one of its uploads waiting → 422.
+- A conduct document names a kept conduct record of the same employee; another kind names none → 422.
+- Approving supersedes the current file in the same transaction; a decided upload is not decided again (422).
+- The download is 410 when the content was purged, 404 (and reported) when the file is missing from the disk.
+
+### 13.4 API reference
+
+| Method | Path | Permission | Notes |
+| ------ | ---- | ---------- | ----- |
+| GET | `/document-kinds` | `documents.view` | The 14 kinds with the guide's cycle and ✔ |
+| GET | `/employees/{id}/documents` | `documents.view` | `attached`, `total` (13), `slots` (each kind: `kind`, `current` or null, `pending`), `conduct` |
+| GET | `/employees/{id}/documents/history` | `documents.view` | Every upload, newest first; `kind`, `page`, `per_page` 5 to 100 |
+| POST | `/employees/{id}/documents` | `documents.manage` | multipart: `kind`, `file`, `conduct_record_id`, `note`; 201 |
+| GET | `/documents` | `documents.view` | The queue: `status` (pending by default), `kind`, `employee_id`, `mine`, `sort` (`uploaded_at`, `reviewed_at`), `direction`, `per_page` |
+| GET | `/documents/{id}` | `documents.view` | |
+| GET | `/documents/{id}/download` | `documents.view` | The content; `inline=1` to show it; logged |
+| POST | `/documents/{id}/approve` | `entries.review` | `note` optional; not one's own |
+| POST | `/documents/{id}/reject` | `entries.review` | `reason` required (3 to 2,000); the uploader is notified |
+| POST | `/documents/{id}/withdraw` | the uploader | |
+| DELETE | `/documents/{id}` | `documents.manage` and `entries.review` | `reason` required (3 to 2,000) |
+
+A document has `status` and `status_label`, `state` and `state_label` (pending, current, superseded, removed,
+rejected, withdrawn), its uploader and reviewer, `content_available`, `can_download`, `can_decide`, `can_withdraw`,
+`can_remove`. The file (`GET /employees/{id}`) gains `computed.documents_attached`; a conduct record
+(`/records/conduct`) gains `document` (`current` or null, `pending`). The download needs the bearer token, so the
+desktop app fetches it and shows the blob.
+
+### 13.5 Audit events
+
+| Event | Label | Context |
+| ----- | ----- | ------- |
+| `documents.uploaded` | رفع وثيقة لملف موظف | the upload, employee, kind, record, type, size, hash |
+| `documents.approved` | اعتماد وثيقة لملف موظف | the upload, employee, kind, self-approved, the one it superseded |
+| `documents.rejected` | ردّ وثيقة مرفوعة | the upload, employee, kind, reason |
+| `documents.withdrawn` | سحب وثيقة مرفوعة | the upload, employee, kind |
+| `documents.removed` | إزالة وثيقة حالية من ملف موظف | the upload, employee, kind, reason |
+| `documents.downloaded` | تنزيل وثيقة أو عرضها | the upload, employee, kind, inline; **security** category (`AuditTrail::SECURITY_EVENTS`) |
+
+## 14. Reports module (Step 6, D-050 to D-052)
+
+`app/Modules/Reports`: the per-person forms, the dashboards and the Excel exports. No tables of its own: everything
+is read from the files and the records when asked.
+
+### 14.1 The forms (D-050)
+
+`FormCatalogue` lays out the three forms as the workbook does (sections and rows); `EmployeeForm` fills them for one
+approved file with its approved values as people read them; `FormPdf` renders the same content as an A4 PDF (mPDF,
+right to left, DejaVu Sans; numbers and dates kept left to right; the branch's name at the top; who printed it and
+when, Damascus time, at the foot of every page). mPDF's temporary files go to `storage/framework/cache/mpdf`.
+
+| Form | Sections |
+| ---- | -------- |
+| `basic` «استمارة المعلومات الأساسية» | التعريف، البيانات الشخصية، الحالة الاجتماعية، التواصل، الإقامة الحالية والسكن، معلومات الوصي، العمرة والحج |
+| `detailed` «استمارة المعلومات التفصيلية» | المؤهلات الدراسية، التحصيل العلمي والدراسة الحالية، جهة العمل والوضع الوظيفي (the six levels of the unit)، العقد والتواريخ الوظيفية، الراتب والديون، الارتباط مع الجهات الأخرى، الحالة الصحية، القرآن والخطابة والتدريس، المركبات، التجهيز والتسليح، الوثائق والمرفقات (each of the 13: «مرفقة (date)» or «غير مرفقة»)، اكتمال البيانات ومتابعة التحديث، ملاحظات |
+| `status` «تقرير الحالة الوظيفية» (`year`) | جهة العمل والوضع الوظيفي، العقد والتواريخ الوظيفية، مؤشرات السنة المختارة (RecordSummary, D-044)، المالية والديون والارتباط الخارجي وجودة البيانات; tables: the last 10 movements, the last 5 conduct records, the latest month of attendance |
+
+A row is `{key, label, display, wide}` (`wide`: a long text taking the whole printed line); a table is `{key, title,
+columns, rows}`. The header: «الاسم الثلاثي», «الرقم الذاتي», «جهة العمل الحالية» (the unit's own name), «الحالة
+الوظيفية».
+
+### 14.2 The dashboards (D-051)
+
+`EmployeeScope` gives the approved files of the employees list's filters (`EmployeeQuery`) and the grouped
+subqueries the reports join: what is left of the debts, the current attachments, the last review of each cycle, and
+the day before which each cycle is overdue. `ListItems` finds system items by code and lays a list's items out for a
+breakdown; `Tile` is a tile's shape and format.
+
+- `OverviewReport`: «لوحة التحكم».
+- `EmployeesDashboard`: «داش بورد الموظفين», twelve groups (`general`, `job_status`, `contracts`, `personal`,
+  `military`, `health_housing`, `education`, `schedule`, `finance`, `nature`, `quality`, `cycles`). An item tile's key
+  is `{list}.{id}` (`job_status.5`), a fixed tile's its name (`with_children`, `overdue.monthly`).
+- `MovementsDashboard` and `ReportPeriod`: «داش بورد الحركات» (`overall`, `leaves`, `finance`, `administrative`,
+  `conduct_attendance`, and `employee`, `employee_attendance` for a chosen employee). Leave tiles are `leave.{id}`.
+- `MovementsByEmployee`: «ملخص جميع الموظفين», four grouped subqueries joined to the page of files; `rating`.
+
+### 14.3 The exports (D-052)
+
+`XlsxDownload` streams one right-to-left sheet with OpenSpout (text cells always text). `EmployeesExport` (500 files a
+page), `RecordsExport` (1,000 records a page, the register's query), `MovementsSummaryExport`. Files are named
+`{what}-{Damascus date}.xlsx`.
+
+### 14.4 API reference
+
+| Method | Path | Permission | Notes |
+| ------ | ---- | ---------- | ----- |
+| GET | `/employees/{id}/forms` | `employees.view` | The three forms: `key`, `title`, `takes_year` |
+| GET | `/employees/{id}/forms/{form}` | `employees.view` | `basic`, `detailed`, `status` (`year`, this year by default); 422 for a file not approved |
+| GET | `/employees/{id}/forms/{form}/pdf` | `employees.view` | The A4 PDF (`inline`); logged |
+| GET | `/reports/overview` | `reports.view` | `org_unit_id`, `include_sub_units`, `missing_limit` (5 by default): `total`, `tiles`, `job_statuses` (`item` null for «غير محددة»), `contracts`, `missing_fields` |
+| GET | `/reports/overview/contracts-ending` | `reports.view` | `days` (30), the unit; soonest first, paged (10): number, name, unit, title, end date, days left |
+| GET | `/reports/overview/overdue-reviews` | `reports.view` | `cycle` (any by default), the unit; the longest unreviewed first, paged (10): each cycle's last review and `overdue_cycles` |
+| GET | `/reports/employees` | `reports.view` | The six filters and the unit: `total`, `groups` |
+| GET | `/reports/movements` | `reports.view` | `year` (required), `month`, `employee_id`: `period`, `groups` |
+| GET | `/reports/movements/employees` | `reports.view` | `year`, `month`, `q`, the unit, `sort` (`name`, `personal_number`, `net`, `movements`, `leave_days`, `absence_rate`, `warnings`), `direction`, paged (25) |
+| GET | `/exports/employees` | `reports.view` and `employees.view` | The employees list's filters and order |
+| GET | `/exports/records/{type}` | `reports.view` and `records.view` | The register's filters and order |
+| GET | `/exports/movements-summary` | `reports.view` | As `/reports/movements/employees` |
+
+### 14.5 Audit events
+
+| Event | Label | Context |
+| ----- | ----- | ------- |
+| `reports.form_printed` | طباعة استمارة موظف (PDF) | employee, form, year |
+| `exports.downloaded` | تصدير بيانات إلى Excel | kind (`employees`, `records.{type}`, `movements_summary`), filters, rows |
+
+## 15. Testing
 
 `php artisan test` (PostgreSQL database `hr_test`, `RefreshDatabase`, the catalogues seeded through
-`DatabaseSeeder` for every test): **153 tests**. Fixed device keys in `tests/Support/TestDeviceKeys.php` (D-020); helpers in
+`DatabaseSeeder` for every test; the field guide's per-request cache cleared): **181 tests**. Fixed device keys in `tests/Support/TestDeviceKeys.php` (D-020); helpers in
 `tests/Support/StaffTestHelpers.php` (`staffUser($role)`, `admin()`, `pendingDevice()`, `approvedDevice()`,
 `loginThrough()` (challenge and signed login through the API), `actingAsStaff()`).
 
@@ -865,7 +1061,7 @@ Any signed-in active staff user; nobody sees another's.
 | `Feature/Employees/EmployeeReviewFlowTest` | Data entry adds: an empty pending file with the values beside it, out of the lists, approved by the supervisor; the administrator adds at once, the supervisor and the general manager cannot add; a change beside the approved value until approved, then history; the supervisor's update at once and logged; refusal needs a reason, withdrawal is the author's; data entry does not approve, nobody approves their own; a stale set is refused; values checked with Arabic field names (dates, ranges, phone, archived and unknown items, unknown fields, contract order, nothing changed); unique national number in the file and in the queue; names required; the history cannot be rewritten (items, decided sets); the general manager reads only |
 | `Feature/Employees/IdentityLockTest` | A locked identity changed by nobody (every role, three fields); the database refuses it, never unlocks, never touches the fingerprint, other fields stay changeable; an empty identity field filled once by the administrator's approval (fingerprint renewed, intact), then locked; the supervisor's approval does not lock, approving an identity change does; the lock action is the administrator's, once; a change waiting when the identity is locked is refused at approval; the administrator approving a new file locks it; the fingerprint catches a change made around the trigger (`employees:verify-identity` fails, audit event); the fingerprint is keyed and does not reveal the number |
 | `Feature/Employees/CycleReviewTest` | Confirmed once per period, counts when approved (due date, history); without changes and only the cycle's fields; overdue again after the window (and the list filter); the four periods |
-| `Feature/Employees/EmployeeFileTest` | The guide (125 fields, sections, cycles, lists, 67 counted, 10 identity); completeness and missing by cycle follow the definitions (settings managers only); age, service years, contract days left for today in Damascus; the workbook's warnings; list search (spellings, Arabic digits, numbers), unit and sub-units, contract, completeness, pending, sort; a unit with people is not archived; the definitions' flags survive reseeding |
+| `Feature/Employees/EmployeeFileTest` | The guide (125 fields and the 13 documents, sections, cycles, lists, 72 counted, the identity fields); completeness of 73; completeness and missing by cycle follow the definitions (settings managers only); age, service years, contract days left for today in Damascus; the workbook's warnings; list search (spellings, Arabic digits, numbers), unit and sub-units, contract, completeness, pending, sort; a unit with people is not archived; the definitions' flags survive reseeding |
 | `Feature/Records/RecordReviewFlowTest` | Data entry adds: nothing in the record until approved, the id chosen at submission, author and approver kept, audit; a correction waits beside the approved value, the supervisor's applies at once, the history; the supervisor neither adds nor removes (also in a batch), the general manager reads only; a removal needs a reason, marks the record, lists it with `deleted=1`; the database refuses deleting a record, changing a removed one and rewriting the history; nobody approves their own, a refusal needs a reason, the author withdraws; a stale correction is refused; the queue by employee and kind |
 | `Feature/Records/RecordRulesTest` | Each kind's columns for the form; required, typed and listed values with Arabic labels, one normal form (Arabic digits, decimals, spaces), unknown fields, archived items, a range in order; only approved files; attendance: attended ≤ planned, planned ≤ the month, the month fixed, nothing changed, one month once, absence computed and flagged, the database's checks; debts: amount > 0, paid ≤ amount (on correction too), what is left and the status, the file's debt columns and the list filter; a conduct record with its decision |
 | `Feature/Records/AttendanceBatchTest` | A month for three files sent, approved together; the supervisor's batch of corrections at once; every error of a batch reported together and nothing kept; a month twice in a batch, or waiting elsewhere; one stale change refuses the whole batch; the batch limit; no removals in a batch; the planned days from the days off and overlapping holidays, each date once |
@@ -874,6 +1070,10 @@ Any signed-in active staff user; nobody sees another's.
 | `Feature/Records/RecordRegisterTest` | The register by name or number (any spelling, Arabic digits), the personal number instead of the id (unknown refused), unit with sub-units, period, type, sort and direction, `per_page` 5 and filters in the links, bad sort refused; attendance by months, half days, no absence, the branch's absence threshold; conduct by status, debts by creditor and remaining; a waiting addition in the register but in no total |
 | `Feature/Notifications/NotificationTest` | A refusal of the file or a record tells its author with the reason; unread count, read one, read all, nobody reads another's; the badges by role; a contract ending within 30 days told once to data entry and the supervisor, not the general manager or the administrator |
 | `Feature/Settings/SettingsCountsTest` | A list item's use by files and records; the payment methods list; a unit's active employees with its sub-units |
+| `Feature/Records/MovementToFileTest` | An approved discharge updates the file (date, «مسرح», «غير فعال») as «تطبيق حركة» in its history by the reviewer, nothing while waiting; each type's targets required or refused; the administrator's movements apply at once, a reward changes nothing; a movement for a later day waits for it (the daily job, once); an old movement entered late does not undo a later one; a waiting change of the same field becomes stale; a taken movement stays taken |
+| `Feature/Documents/DocumentTest` | The 14 kinds and the five counted; data entry's upload waits (stored by its id, the queue, the badges), the supervisor approves and the completeness follows; a reviewer's upload replaces the current file, the old one superseded and readable, the same content refused; a refusal needs a reason, purges the content, tells the uploader, 410 on download; the uploader alone withdraws; the type from the content, the size limit; the administrator alone removes, with a reason; the download's headers and its security log, `documents.view` needed; a conduct record's document on its record; a document's ✔ from the guide; the database refuses deleting or changing an upload |
+| `Feature/Reports/DashboardTest` | `reports.view` only; the overview's tiles, job statuses with their share, contracts, missing fields, a unit with or without its sub-units, contracts ending soon and files behind on their reviews; the employees dashboard's groups, tiles by item (a renamed item keeps its tile, an added one gets one), its filters, ages, salaries, «طالب حالياً»; the movements dashboard for a year and a month, each leave type, the net, conduct and absence, the chosen employee; one row per file with the year's leave balance and its rating, sorted by the net |
+| `Feature/Reports/FormAndExportTest` | The three forms with the approved values as people read them (a waiting change not printed), the attachments' rows, the status report's year and latest records, the PDF of each (logged), no form for a file not approved; the employees export (every field, a formula kept as text, the list's filters, logged with its rows), a register's and the movements summary's exports, data entry not exporting |
 | `Unit/ArabicTextTest`, `Unit/BusinessDayTest` | Digits, search key; the next Damascus midnight, a day's UTC bounds |
 
 API documentation check: `php artisan scramble:analyze` must report no warnings. Code style: `./vendor/bin/pint`.
@@ -881,14 +1081,18 @@ API documentation check: `php artisan scramble:analyze` must report no warnings.
 The whole login was also run over HTTP with `tools/device-client.mjs` against `php artisan serve`: registration,
 console approval, signed login, a call with the token, the audit log.
 
-## 14. Known limitations and pending work
+## 16. Known limitations and pending work
 
-- The employees, their records, documents, views and import come in Steps 3 to 7 (section 2).
-- The 13 documents (5 of them counted for completeness) come in Step 5; until then a conduct record's document is a
-  link (text). The status report, the dashboards and the exports read the records in Step 6.
-- Open for the owner (from the frontend's questions): whether movements change the file (OD-23), «تاريخ التقديم»
-  (OD-24), «صلة السكن بجهة الطوارئ» (OD-25), the dashboard's period, complete attendance and what an import brings
-  (OD-26). Instalments have no schedule, so «متأخر قسط واحد» is not computed (OD-21).
+- The import comes in Step 7 (section 2).
+- Uploads are checked for their type only; there is no antivirus scan on the server. The workbook's existing links
+  come with the import (Step 7).
+- The PDF uses DejaVu Sans, which mPDF ships: Arabic-Indic digits (٠١٢) have no glyphs in it, so values keep the
+  Latin digits the API stores. An export's or a form's filters are what the screen sends; nothing is scheduled.
+- A document's content is a file on the server's disk: backing up `storage/app/documents` with the database belongs
+  to the deployment (Step 7).
+- A removed or corrected movement does not undo what the file took from it (D-048): the file is corrected as any file.
+- Not built, by the owner's decision (OD-26): the dashboard's period filter (frontend Q-14) and a «complete»
+  attendance mark (Q-16). Open for the owner: what an import brings (OD-27). Instalments have no schedule, so «متأخر قسط واحد» is not computed (OD-21).
 - A wrong value in a locked identity cannot be corrected in the application, by the owner's decision (D-034): the
   administrator checks it before approving.
 - Assumed until the owner says otherwise: the current work unit (OD-15), the three names as the minimum of a new
@@ -901,7 +1105,7 @@ console approval, signed login, a call with the token, the audit log.
 - Migrations may still change in place until the first production installation; from then on they are append-only
   (recruitment D-101).
 
-## 15. Changelog
+## 17. Changelog
 
 | Step | Summary |
 | ---- | ------- |
@@ -913,3 +1117,6 @@ console approval, signed login, a call with the token, the audit log.
 | 3.1 | The identity limit replaced by the **identity lock** (owner, 24 Nov): six identity fields (الرقم الذاتي، الرقم الوطني، الاسم، الأب، الأم، العائلة); locked when the administrator approves them; then changed by nobody, enforced by a trigger; empty ones filled once (D-034). The keyed identity fingerprint and its nightly check (D-038). History and logs: the record and the application log kept for good, only changes stored, measured at 55 MB a year for 4,000 files; expired challenges and tokens pruned; a failed login logged with the device, the username and the address (D-039). No correction after the lock (OD-14 answered). 117 tests |
 | 4 | The records: «سجل الحركات», «سجل الدوام الشهري», «سجل السلوك الوظيفي», «سجل الديون» as four typed tables, written only by approved changes, never deleted (D-040); their changes reviewed like the file's, batches of up to 500 for a month's attendance, approved whole, stale sets refused (D-041); the workbook's checks and formula columns, in the API and the database (D-042); the weekly days off and the month's planned days suggested (D-043); the status report's year and the file's debt columns, computed (D-044); `course` and four conduct codes; `records:generate-demo` and the measurements (D-031). 138 tests |
 | 4.1 | Aligned with the frontend (D-047): `*_label` beside every enum, `reason` for refusals and removals, `per_page` 5–100 with `sort`/`direction` and filters in the links, `/api/v1` as the documented base, every response typed. Owner's answers of 25 Nov: waiting additions in the registers, counted nowhere (D-041); debt payments as entries of their own with a payment methods list (D-045); leave days computed as calendar days, a leave needs its period; only internal and external leave from the balance (D-042, D-044); OD-17, OD-18 answered. Notifications and `/badges` (D-046). From the requirements: «الرقم الذاتي» required, the register's filters, filled out of counted (68, 73 with Step 5), service dates, debt counts, list items' use, units' active employees, computed daily hours, the absence threshold as a setting, codes for the leave, movement and conduct types; half days of attendance; the registers' filters by employee, unit, period. 153 tests |
+| 4.2 | The hiring system's `name_ar` for list items and units (and `{id, name_ar, archived}` values in the file, the register and the records) and `POST /new` for staff users (D-047). «الرقم الوطني» required on a new file; every field of a new file and of a change in the API document, generated from the catalogue; «تاريخ التقديم» = the file's approval date (OD-24). A movement updates the file (D-048, OD-23): targets on the movement, effects by type, applied when approved and due or by `records:apply-due-movements`, «تطبيق حركة» in the file's history. 160 tests |
+| 5 | The employees' documents (D-049): the workbook's 13 attachments as uploads on a private disk, one row each, never deleted, content checked by type and hash; reviewed like the file (data entry's wait, a reviewer's at once, a refusal notifies, the uploader withdraws), the approved one replacing the current file and the old kept as superseded; removal by the administrator with a reason; downloads streamed safely and logged as security events; the 13 in the field guide as `document` definitions, so completeness counts the workbook's 73; a conduct record's document; the file's `documents_attached`, the badges' `reviews.documents`. «صلة السكن بجهة الطوارئ» not added (OD-25). 171 tests |
+| 6 | The forms, the dashboards and the exports. The three printed sheets of an employee as rows for the screen and as an A4 PDF from the server, logged (D-050). «لوحة التحكم» with its contracts and review lists, «داش بورد الموظفين» with a tile for every list item (renames and additions followed), «داش بورد الحركات» with its per-employee summary, all in SQL over the approved files and kept records (D-051). Streamed Excel exports of the employees, the registers and the summary, text never a formula, logged with filters and rows (D-052). mPDF and OpenSpout added. OD-26 answered (no period filter, no «complete» attendance); the import's scope is OD-27. A movement type's code read once (the register's pages were one query a movement). 181 tests |

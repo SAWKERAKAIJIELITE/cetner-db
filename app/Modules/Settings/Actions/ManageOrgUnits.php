@@ -140,7 +140,7 @@ final class ManageOrgUnits
             ->first();
 
         if ($existing !== null) {
-            throw ValidationException::withMessages(['name' => $existing->isArchived()
+            throw ValidationException::withMessages(['name_ar' => $existing->isArchived()
                 ? __('settings.org_duplicate_archived', ['name' => $existing->name])
                 : __('settings.org_duplicate', ['name' => $existing->name])]);
         }

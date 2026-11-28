@@ -34,13 +34,18 @@ class EmployeeSummaryResource extends JsonResource
         return [
             'id' => $this->id,
             'file_status' => $this->file_status->value,
+            'file_status_label' => $this->file_status->label(),
             'personal_number' => $this->personal_number,
             'national_number' => $this->national_number,
             'full_name' => $this->fullName(),
             'identity_locked' => $this->identity_locked_at !== null,
-            'org_unit' => $this->org_unit_id === null ? null : ['id' => $this->org_unit_id, 'path_label' => $labels->unitPath($this->org_unit_id)],
-            'employee_status' => $labels->item('employee_status_id', $this->employee_status_id),
-            'job_status' => $labels->item('job_status_id', $this->job_status_id),
+            /** `{id, name_ar, archived}`, name_ar being the unit's path (the register's «جهة العمل الحالية»). */
+            'org_unit' => $labels->ref('org_unit_id', $this->org_unit_id),
+            'employee_status' => $labels->ref('employee_status_id', $this->employee_status_id),
+            'job_status' => $labels->ref('job_status_id', $this->job_status_id),
+            'job_title' => $labels->ref('job_title_id', $this->job_title_id),
+            /** «تاريخ التقديم»: the day the file was approved. */
+            'application_date' => $this->activated_at?->setTimezone(config('hr.timezone'))->format('Y-m-d'),
             'contract_ends_on' => $this->contract_ends_on?->format('Y-m-d'),
             'contract_days_left' => EmployeeComputed::contractDaysLeft($this->resource),
             'completeness' => (float) $this->completeness,

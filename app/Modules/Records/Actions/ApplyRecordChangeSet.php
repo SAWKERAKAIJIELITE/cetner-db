@@ -7,6 +7,7 @@ use App\Modules\Employees\Models\Employee;
 use App\Modules\Identity\Models\StaffUser;
 use App\Modules\Records\Enums\RecordAction;
 use App\Modules\Records\Enums\RecordType;
+use App\Modules\Records\Models\EmployeeMovement;
 use App\Modules\Records\Models\EmployeeRecord;
 use App\Modules\Records\Models\RecordChangeSet;
 use App\Modules\Records\Support\RecordCatalogue;
@@ -23,6 +24,8 @@ use Illuminate\Validation\ValidationException;
  */
 final class ApplyRecordChangeSet
 {
+    public function __construct(private readonly ApplyMovementToFile $movements) {}
+
     public function handle(RecordChangeSet $set, StaffUser $reviewer, bool $selfApproved, ?string $note = null): void
     {
         $type = $set->record_type;
@@ -85,6 +88,14 @@ final class ApplyRecordChangeSet
                 RecordAction::Update => $this->update($type, $records[$item->record_id], $item->new_values, $item->position, $set->items_count),
                 RecordAction::Delete => $records[$item->record_id]->forceFill(['deleted_at' => $now, 'deleted_by' => $set->submitted_by])->save(),
             };
+        }
+
+        // Approved movements due today or earlier update their files now (D-048), oldest first.
+        if ($type === RecordType::Movements) {
+            $created = $items->where('action', RecordAction::Create)->pluck('record_id')->all();
+
+            EmployeeMovement::query()->whereIn('id', $created)->orderBy('occurred_on')->orderBy('id')->get()
+                ->each(fn (EmployeeMovement $movement) => $this->movements->handle($movement, $reviewer));
         }
 
         $set->forceFill([

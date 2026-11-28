@@ -6,7 +6,8 @@ namespace App\Modules\Notifications\Notifications;
 class ChangeRejected extends StaffNotice
 {
     /**
-     * @param  'employees'|'records'  $area  the file's changes or a record's
+     * @param  'employees'|'records'|'documents'  $area  the file's changes, a record's, or an uploaded document (D-049);
+     *                                                   for a document, `change_set_id` is the upload's id
      */
     public function __construct(
         private readonly string $area,

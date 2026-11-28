@@ -32,6 +32,11 @@ final class RecordCatalogue
                 'starts_on' => ['label' => 'من تاريخ', 'type' => 'date'],
                 'ends_on' => ['label' => 'إلى تاريخ', 'type' => 'date'],
                 'status' => ['label' => 'الحالة', 'type' => 'text', 'max' => 100],
+                // What the file becomes (D-048): by the movement's type, see MovementEffects.
+                'new_org_unit_id' => ['label' => 'الجهة الجديدة', 'type' => 'unit'],
+                'new_job_status_id' => ['label' => 'الحالة الوظيفية الجديدة', 'type' => 'list', 'list' => 'job_status'],
+                'new_position_level_id' => ['label' => 'المنصب الجديد', 'type' => 'list', 'list' => 'position_level'],
+                'new_job_title_id' => ['label' => 'المسمى الوظيفي الجديد', 'type' => 'list', 'list' => 'job_title'],
                 'notes' => self::NOTES,
             ],
             RecordType::Attendance => [

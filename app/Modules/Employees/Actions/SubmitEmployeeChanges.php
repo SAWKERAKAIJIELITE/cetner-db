@@ -29,10 +29,10 @@ use Illuminate\Validation\ValidationException;
 final class SubmitEmployeeChanges
 {
     /**
-     * A new file needs «الرقم الذاتي», the workbook's key (every record names the employee by it), and the three
-     * names of «الاسم الثلاثي»; everything else may come later (D-032, Step 4.1).
+     * A new file needs «الرقم الذاتي», the workbook's key (every record names the employee by it), «الرقم الوطني»
+     * (owner, 25 Nov), and the three names of «الاسم الثلاثي»; everything else may come later (D-032).
      */
-    public const REQUIRED_TO_CREATE = ['personal_number', 'first_name', 'father_name', 'family_name'];
+    public const REQUIRED_TO_CREATE = ['personal_number', 'national_number', 'first_name', 'father_name', 'family_name'];
 
     public function __construct(private readonly ApplyChangeSet $apply) {}
 
@@ -83,6 +83,21 @@ final class SubmitEmployeeChanges
 
             return $this->record($employee, ChangeSetKind::Update, null, null, $items, $old, $note, $author, $identity);
         });
+    }
+
+    /**
+     * What an approved movement makes of the file (D-048): the fields that differ, as a change of the kind
+     * «تطبيق حركة», applied at once (the movement's reviewer approved it). None when nothing differs.
+     *
+     * @param  array<string, mixed>  $values
+     */
+    public function fromMovement(Employee $employee, array $values, string $note, StaffUser $actor): ?EmployeeChangeSet
+    {
+        $values = FieldValues::validate($values);
+        $employee = $this->lockActive($employee);
+        [$items, $old] = $this->changes($employee, $values);
+
+        return $items === [] ? null : $this->record($employee, ChangeSetKind::Movement, null, null, $items, $old, $note, $actor, false);
     }
 
     /**
@@ -224,7 +239,7 @@ final class SubmitEmployeeChanges
             $set->items()->save(new EmployeeChangeItem(['field' => $field, 'old_value' => $old[$field] ?? null, 'new_value' => $value]));
         }
 
-        $applied = ReviewRights::appliesAtOnce($author, $identity);
+        $applied = $kind === ChangeSetKind::Movement || ReviewRights::appliesAtOnce($author, $identity);
 
         AuditTrail::record('employees.change_submitted', $author, [
             'employee_id' => $employee->getKey(),

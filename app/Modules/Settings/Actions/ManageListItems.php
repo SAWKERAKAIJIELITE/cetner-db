@@ -162,7 +162,7 @@ final class ManageListItems
             ->first();
 
         if ($existing !== null) {
-            throw ValidationException::withMessages(['label' => $existing->isArchived()
+            throw ValidationException::withMessages(['name_ar' => $existing->isArchived()
                 ? __('settings.item_duplicate_archived', ['label' => $existing->label])
                 : __('settings.item_duplicate', ['label' => $existing->label])]);
         }

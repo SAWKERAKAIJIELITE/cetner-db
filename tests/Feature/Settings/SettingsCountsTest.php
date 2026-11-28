@@ -30,8 +30,8 @@ class SettingsCountsTest extends TestCase
     public function test_a_unit_counts_its_active_employees_with_the_units_under_it(): void
     {
         $this->actingAsStaff($this->admin());
-        $top = $this->postJson(self::API.'/settings/org-units', ['name' => 'القيادة'])->json('data.id');
-        $branch = $this->postJson(self::API.'/settings/org-units', ['name' => 'الفرع', 'parent_id' => $top])->json('data.id');
+        $top = $this->postJson(self::API.'/settings/org-units', ['name_ar' => 'القيادة'])->json('data.id');
+        $branch = $this->postJson(self::API.'/settings/org-units', ['name_ar' => 'الفرع', 'parent_id' => $top])->json('data.id');
         $active = $this->itemId('employee_status', 'active');
 
         $this->employeeFile(['org_unit_id' => $top, 'employee_status_id' => $active]);

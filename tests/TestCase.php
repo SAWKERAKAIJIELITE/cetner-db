@@ -2,6 +2,7 @@
 
 namespace Tests;
 
+use App\Modules\Employees\Support\FieldDefinitions;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
@@ -16,4 +17,12 @@ abstract class TestCase extends BaseTestCase
     protected bool $seed = true;
 
     protected string $seeder = DatabaseSeeder::class;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // The field guide is read once per request (FieldDefinitions); a test's rolled-back change must not stay.
+        FieldDefinitions::forget();
+    }
 }

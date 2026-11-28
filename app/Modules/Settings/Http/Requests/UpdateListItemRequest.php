@@ -9,8 +9,9 @@ class UpdateListItemRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'label' => ['required_without:sort_order', 'string', 'max:150', 'not_regex:/^\s*$/u'],
-            'sort_order' => ['required_without:label', 'integer', 'between:0,100000'],
+            /** The item's new Arabic name. */
+            'name_ar' => ['required_without:sort_order', 'string', 'max:150', 'not_regex:/^\s*$/u'],
+            'sort_order' => ['required_without:name_ar', 'integer', 'between:0,100000'],
         ];
     }
 }

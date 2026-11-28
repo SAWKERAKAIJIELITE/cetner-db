@@ -24,7 +24,7 @@ class OrgUnitResource extends JsonResource
             'id' => (int) $row->id,
             'parent_id' => $row->parent_id === null ? null : (int) $row->parent_id,
             'level' => (int) $row->level,
-            'name' => $row->name,
+            'name_ar' => $row->name,
             /** @var list<string> the names from the top unit down to this one */
             'path' => $row->path,
             /** @var list<int> */
