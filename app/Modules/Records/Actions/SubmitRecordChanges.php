@@ -76,6 +76,18 @@ final class SubmitRecordChanges
     }
 
     /**
+     * An approved import's rows of one register (D-053), already checked when staged: written as one change set
+     * marked with the import and applied at once by its reviewer. A movement is history: it does not change the
+     * file (the employees' sheet is the file).
+     *
+     * @param  list<array{position: int, action: RecordAction, record_id: string, employee_id: string, old_values: ?array<string, mixed>, new_values: ?array<string, mixed>}>  $items
+     */
+    public function fromImport(RecordType $type, array $items, string $note, StaffUser $uploader, StaffUser $approver, string $importId): RecordChangeSet
+    {
+        return $this->record($type, $items, $note, $uploader, $approver, $importId);
+    }
+
+    /**
      * The approved records the changes name, of this kind only.
      *
      * @param  list<RecordChange>  $changes
@@ -319,7 +331,7 @@ final class SubmitRecordChanges
     }
 
     /** @param list<array<string, mixed>> $items */
-    private function record(RecordType $type, array $items, ?string $note, StaffUser $author): RecordChangeSet
+    private function record(RecordType $type, array $items, ?string $note, StaffUser $author, ?StaffUser $approver = null, ?string $importId = null): RecordChangeSet
     {
         $set = new RecordChangeSet;
         $set->forceFill([
@@ -329,6 +341,7 @@ final class SubmitRecordChanges
             'note' => $note === null || trim($note) === '' ? null : trim($note),
             'submitted_by' => $author->getKey(),
             'submitted_at' => now(),
+            'import_id' => $importId,
         ])->save();
 
         $now = now();
@@ -346,7 +359,9 @@ final class SubmitRecordChanges
             RecordChangeItem::query()->insert($chunk);
         }
 
-        $applied = $author->hasPermission('entries.review');
+        $applied = $importId !== null || $author->hasPermission('entries.review');
+        $approver ??= $author;
+        $self = $approver->getKey() === $author->getKey();
         $actions = array_count_values(array_map(fn ($i) => $i['action']->value, $items));
 
         AuditTrail::record('records.change_submitted', $author, [
@@ -355,15 +370,17 @@ final class SubmitRecordChanges
             'actions' => $actions,
             'employee_ids' => array_values(array_unique(array_column($items, 'employee_id'))),
             'applied_at_once' => $applied,
+            'import_id' => $importId,
         ]);
 
         if ($applied) {
-            $this->apply->handle($set, $author, true);
+            $this->apply->handle($set, $approver, $self, null, $importId === null);
 
-            AuditTrail::record('records.change_approved', $author, [
+            AuditTrail::record('records.change_approved', $approver, [
                 'record_type' => $type->value,
                 'change_set_id' => $set->getKey(),
-                'self_approved' => true,
+                'self_approved' => $self,
+                'import_id' => $importId,
             ]);
         }
 

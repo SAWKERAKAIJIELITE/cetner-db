@@ -4,7 +4,7 @@ The backend of the personnel system that replaces the workbook «نظام إدا
 A Laravel 12 REST API on PostgreSQL 16, built the same way as the recruitment system: a modular monolith
 (`app/Modules/*`), constraints in the database, append-only history, Arabic messages, device-bound staff login.
 
-- **Status:** Step 6 of 7 (Step 1: foundation, staff accounts and roles, device-bound login, audit log; Step 2: settings; Step 3: the employee's file; Step 4: the records; Step 5: the documents; Step 6: the forms, dashboards and exports).
+- **Status:** Step 7.1 of 7 (Step 1: foundation, staff accounts and roles, device-bound login, audit log; Step 2: settings; Step 3: the employee's file; Step 4: the records; Step 5: the documents; Step 6: the forms, dashboards and exports; Step 7.1: the workbook import).
 - **Documentation:** [`docs/code-documentation.md`](docs/code-documentation.md) (what and how),
   [`docs/decisions.md`](docs/decisions.md) (why, and the open questions).
 
@@ -16,7 +16,7 @@ cp .env.example .env && php artisan key:generate
 psql -U postgres -c "CREATE DATABASE hr;" -c "CREATE DATABASE hr_test;"
 php artisan migrate --seed          # demo accounts: admin, supervisor, manager, entry, entry.two — password Password1!
 php artisan serve
-php artisan test                    # 181 tests on PostgreSQL
+php artisan test                    # 189 tests on PostgreSQL
 ```
 
 Log in like the desktop app will, with the reference client:
@@ -39,4 +39,4 @@ API documentation (local only): <http://127.0.0.1:8000/docs/api>.
 | 4 ✓ | Records: movements, monthly attendance, conduct, debts and their payments; notifications and the sidebar counts (4.1) |
 | 5 ✓ | Documents: the 13 attachments as uploaded files, reviewed, with their history; the conduct record's document |
 | 6 ✓ | Views and reports: the per-person forms on screen and as PDF, the dashboards, Excel exports |
-| 7 | Import of existing workbooks; on-premises deployment guide |
+| 7 | Import of existing workbooks ✓ (7.1); on-premises deployment guide (7.2) |

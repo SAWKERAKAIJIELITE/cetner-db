@@ -1,0 +1,62 @@
+<?php
+
+return [
+    // The file
+    'not_xlsx' => 'الملف ليس ملف Excel بصيغة xlsx. احفظه من Excel بصيغة «مصنف Excel (*.xlsx)» ثم ارفعه.',
+    'has_macros' => 'الملف يحتوي على وحدات ماكرو (VBA): لا تُقبل الملفات التي تحتوي على شيفرة. احفظ نسخة بصيغة xlsx دون ماكرو.',
+    'too_large' => 'حجم الملف أكبر من :max ميغابايت.',
+    'already_imported' => 'هذا الملف نفسه استُورد من قبل (:date). استيراده ثانية يكرر السجلات.',
+    'already_pending' => 'هذا الملف نفسه مرفوع وبانتظار المراجعة.',
+    'no_known_sheet' => 'لا يحتوي الملف على أي ورقة معروفة: «قاعدة بيانات الموظفين»، «سجل الحركات»، «سجل الدوام الشهري»، «سجل السلوك الوظيفي»، «سجل الديون».',
+    'missing_columns' => 'ورقة «:sheet» ينقصها :columns.',
+    'no_header' => 'لم يُعثر على صف العناوين في ورقة «:sheet».',
+    'unreadable' => 'تعذرت قراءة الملف: :reason',
+    'nothing_to_import' => 'لا يحتوي الملف على أي سطر فيه بيانات.',
+
+    // The decision
+    'not_pending' => 'الاستيراد :status: لا يُتخذ فيه قرار جديد.',
+    'has_invalid' => 'في الاستيراد :count سطراً غير صالح. صحّحها في الملف وارفعه من جديد.',
+    'cancel_own_only' => 'يلغي الاستيرادَ رافعُه فقط.',
+    'not_applying' => 'الاستيراد ليس قيد الاستيراد.',
+
+    // A row of the file
+    'personal_number_missing' => 'الرقم الذاتي فارغ.',
+    'personal_number_twice' => 'الرقم الذاتي :number مكرر في الملف (الأسطر :lines).',
+    'national_number_twice' => 'الرقم الوطني :number مكرر في الملف (الأسطر :lines).',
+    'national_number_taken' => 'الرقم الوطني :number لموظف آخر محفوظ (الرقم الذاتي :other).',
+    'number_waiting' => ':field :number بانتظار المراجعة في إدخال آخر.',
+    'new_file_missing' => 'ملف جديد ينقصه :fields.',
+    'not_in_list' => '«:value» ليست من قائمة «:list».',
+    'item_archived' => '«:value» مؤرشفة في قائمة «:list».',
+    'not_yes_no' => '«:value» ليست «نعم» أو «لا».',
+    'unit_unknown' => ':what «:path» ليست في الهيكلية التنظيمية.',
+    'unit_archived' => ':what «:path» مؤرشفة في الهيكلية التنظيمية.',
+    'unit_gap' => ':what: مستوى فارغ بين مستويين.',
+    'contract_order' => 'تاريخ انتهاء العقد قبل تاريخ بدايته.',
+    'identity_locked' => '«:field» مثبت ولا يتغير: المحفوظ «:stored» وفي الملف «:file».',
+    'exists_skipped' => 'الموظف موجود (الرقم الذاتي :number) ولم يُغيَّر: «تخطي السجل».',
+    'exists_same' => 'الموظف موجود ولا يختلف عما في الملف.',
+    'differs' => '«:field»: المحفوظ «:stored» وفي الملف «:file».',
+    'pending_changes' => 'لملف الموظف تعديلات بانتظار المراجعة: ستُرَدّ قديمةً بعد التحديث.',
+    'likely_duplicate' => 'قد يكون مكرراً للموظف :number (:name): الاسم وتاريخ الميلاد متطابقان.',
+    'likely_duplicate_in_file' => 'الاسم وتاريخ الميلاد مطابقان للسطر :line برقم ذاتي آخر: قد يكون الشخص نفسه.',
+    'discharged_no_date' => 'الحالة الوظيفية «مسرح» دون تاريخ التسريح.',
+    'active_but_left' => 'حالة الموظف «فعال» والحالة الوظيفية تدل على ترك العمل.',
+    'phone_as_number' => '«:field» مكتوب رقماً في Excel: ربما حُذف الصفر الأول (:value).',
+    'link_not_imported' => '«:column»: الروابط لا تُستورد. ارفع الوثيقة من ملف الموظف بعد الاستيراد.',
+    'review_future' => '«:column» في المستقبل (:date).',
+    'review_older' => '«:column» (:date) ليس أحدث من آخر مراجعة محفوظة (:stored): لا يُستورد.',
+
+    // A row of a register
+    'employee_unknown' => 'الرقم الذاتي :number ليس لموظف محفوظ ولا في ورقة الموظفين.',
+    'employee_invalid' => 'ملف الموظف :number في السطر :line من ورقة الموظفين غير صالح.',
+    'employee_not_active' => 'ملف الموظف :number غير معتمد.',
+    'name_differs' => 'اسم الموظف في السجل «:sheet_name» يختلف عن ملفه «:file_name».',
+    'days_differ' => 'عدد الأيام في الملف :typed والمحسوب من الفترة :computed: يُعتمد المحسوب.',
+    'days_without_period' => 'عدد الأيام (:typed) لا يُستورد دون «من تاريخ» و«إلى تاريخ».',
+    'movement_history' => 'حركة سابقة: تُستورد في السجل ولا تغيّر ملف الموظف (ورقة الموظفين هي الملف).',
+    'record_exists' => 'السجل موجود مسبقاً بالقيم نفسها.',
+    'record_same_in_file' => 'مطابق للسطر :line: قد يكون مكرراً.',
+    'month_twice' => 'شهر :month للموظف :number مكرر في الملف (الأسطر :lines).',
+    'month_exists_skipped' => 'دوام شهر :month محفوظ ولم يُغيَّر: «تخطي السجل».',
+];

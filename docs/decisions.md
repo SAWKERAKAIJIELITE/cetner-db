@@ -929,6 +929,66 @@ Template at the end of this file.
 - **Rejected:** building the file in memory (PhpSpreadsheet: a large register would not fit); CSV (Arabic and dates
   open badly in Excel without settings).
 
+## 9. The import (Step 7)
+
+### D-053 Importing the owner's workbook: staged, every problem shown by line, reviewed, written whole
+
+- **Status:** Accepted (owner, 26 Nov: «the import brings the employee files, and the four registers too (if
+  existed); check the conflicts, mismatches and mistakes and show them to the user so he will know what's wrong and
+  fix it»; OD-27; the frontend's §6)
+- **Decision:**
+  - **What it reads:** «قاعدة بيانات الموظفين» and, each if present, «سجل الحركات», «سجل الدوام الشهري», «سجل السلوك
+    الوظيفي», «سجل الديون». A sheet is found by its name, its header as the row (of the first twelve) whose titles
+    match the most known columns, and each column by its title, not its letter (`ImportColumns`), so a copy with
+    columns moved, added or removed still imports. The workbook's formulas (the employee's name in a register,
+    «العمر», «نسبة الاكتمال» …) are computed here, never read; a line holding only formulas is no row.
+  - **Refused whole** (422, nothing kept): not an .xlsx, macros inside, the same file (SHA-256) already imported or
+    waiting, a present sheet without a required column (the number and the identity of a file; a register's number
+    and required fields), no known sheet, no row.
+  - **Otherwise staged row by row**, the line as Excel numbers it, with every problem in Arabic, its level and the
+    column it is about:
+    - **«غير صالحة»** (error): a value against its field's rules (the API's own, with the field's name); a list
+      value not in its list or archived («"ذكرر" ليست من قائمة "الجنس"»); a unit path not in the structure; a
+      number twice in the file; a national number of another stored employee, or waiting in another entry; a new
+      file without its identity; a contract ending before it starts; a review date in the future; in update mode a
+      locked identity value that differs (D-034); a register row whose employee is unknown, not approved, or invalid
+      in the employees' sheet; a register's own rules (D-042: a leave without its period, attendance over planned…);
+      a month of attendance twice.
+    - **«تحتاج مراجعة»** (warning): a likely duplicate (the same name and birth date as a stored file, or another
+      line, with another number); «مسرح» without «تاريخ التسريح»; «فعال» but gone; a phone typed as a number in
+      Excel (its first zero may be lost); a register row whose «اسم الموظف» is not the file's; a movement's typed
+      days that are not its period's; a record identical to another line.
+    - **«مستبعدة»**: already stored. With «تخطي السجل» (the default) a stored employee or month stays as it is and its
+      differences are listed one by one («"رقم الهاتف": المحفوظ … وفي الملف …»); with «تحديث السجل الموجود» it takes
+      the file's values where they differ (shown as changes), and a stored month of attendance is corrected. A
+      record identical to a stored one is left out either way.
+    - Worth knowing (info): a document link is not a file and is not imported (upload it on the file); an older
+      «آخر مراجعة» than the stored one; a movement is history.
+  - **Reviewed:** `imports.manage` uploads (data entry, the administrator); `entries.review` approves or sends back
+    with a reason (the uploader is told); the uploader cancels. A reviewer may approve their own upload (their own
+    entries apply at once, D-023). **No approval while a row is «غير صالحة»:** the owner fixes the workbook and
+    uploads it again, so what is imported is what the workbook says.
+  - **Written whole or not at all**, after the response (the screen follows `status`: «قيد الاستيراد», then «مستورد»
+    or «فشل الاستيراد»), in one transaction: new files, then the stored ones' differences, then «آخر مراجعة» as a
+    confirmation of its cycle on that day, then each register. Every change is the file's or the register's own
+    change set, submitted by the uploader, approved by the reviewer and marked with the import (`import_id`), with
+    the same rules checked again; a row refused then rolls everything back and the import says which sheet and line
+    («فشل الاستيراد», `failure`). The uploader and the reviewer are notified either way.
+  - **An imported identity is not locked:** the administrator checks it and locks it (D-034), as the owner said
+    («the admin guarantees correctness before locking»).
+  - **An imported movement is history:** it is taken as it is (`applied_to_file_at`) and does not change the file;
+    the employees' sheet is the file (the workbook has no «الجهة الجديدة» or «المنصب الجديد»).
+  - **Dates:** an Excel date, its serial number, or text as `Y-m-d`, `Y/m/d`, `d/m/Y`, `d-m-Y` (the day first, as in
+    Syria). **Yes / no:** «نعم» / «لا» and the usual spellings.
+  - **Size and time:** up to 20 MB (`HR_IMPORT_MAX_KB`; the owner's empty workbook is 4.3 MB, more than the frame's
+    5 MB). On this machine 4,000 files with 24,000 records stage in about 20 seconds and are written in under three
+    minutes; `imports:apply {id}` writes an import left «قيد الاستيراد» if the server stopped meanwhile.
+  - **Kept:** the import and its staged rows are never deleted or rewritten (a trigger); each row learns what it made.
+- **Rejected:** importing the valid rows and leaving the others (half a workbook, and the owner would not know which
+  half); matching columns by letter (any added column would shift everything); locking imported identities (thousands
+  of values nobody checked one by one); applying old movements to the files (they would overwrite the workbook's
+  current values).
+
 ---
 
 ## Open questions
@@ -960,7 +1020,7 @@ Template at the end of this file.
 | OD-24 | «تاريخ التقديم» on the file's banner (frontend Q-12). | **Answered** (25 Nov): the day the file was approved (`application_date`). |
 | OD-25 | «صلة السكن بجهة الطوارئ» in the design, not in the workbook (frontend Q-13). | **Answered** (26 Nov): not added. |
 | OD-26 | What the dashboard's period filters (frontend Q-14); what makes the attendance «complete» (Q-16). | **Answered** (26 Nov): neither is built: the dashboards have no period filter of that kind and nothing marks a month's attendance «complete». |
-| OD-27 | Which data an import brings (frontend Q-17): the employees' files only, or the four registers too? | **Open**, for Step 7. |
+| OD-27 | Which data an import brings (frontend Q-17): the employees' files only, or the four registers too? | **Answered** (26 Nov): the files and the four registers, each if present; every conflict, mismatch and mistake shown by line (D-053). |
 | OD-12 | Scale and performance (owner's questions, 23 Nov): cache, distributed database, history. | **Answered in D-031.** |
 
 ---

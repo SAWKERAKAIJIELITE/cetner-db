@@ -1,9 +1,9 @@
 # HR Backend: Technical Documentation (نظام إدارة القوى البشرية)
 
-Status: **Step 6** (Step 1: foundation, staff identity and roles, device-bound login, access and user management,
+Status: **Step 7.1** (Step 1: foundation, staff identity and roles, device-bound login, access and user management,
 audit log; Step 2: settings; Step 3: the employee's file with review, history, identity lock and cycles; Step 4: the
 four records with their review and the status report's year; Step 5: the employees' documents; Step 6: the forms,
-the dashboards and the exports).
+the dashboards and the exports; Step 7.1: the import of the owner's workbook).
 Updated at the end of every step.
 
 Audience: developers joining or reviewing the backend.
@@ -35,7 +35,7 @@ desktop app only (React + Electron, OD-3) and log in from approved devices (D-01
 | 4 | Records | Done | «سجل الحركات», «سجل الدوام الشهري», «سجل السلوك الوظيفي», «سجل الديون» with the same review, batches for a month's attendance, the status report's year («مؤشرات السنة»), the file's debt columns |
 | 5 | Documents | Done | The 13 attachments (photo, ID, family statement, certificate, …) as uploaded files instead of links, reviewed, with their history; the conduct record's document; the five counted ones in the completeness (D-049) |
 | 6 | Reports | Done | «عرض الفرد» (the file) and the three forms on screen and as PDF (D-050); «لوحة التحكم», «داش بورد الموظفين», «داش بورد الحركات» (D-051); Excel exports of the employees, the registers and the movements summary (D-052) |
-| 7 | Import and deployment | Planned | Importing existing workbooks (staged, reviewed, all-or-nothing); the on-premises deployment guide |
+| 7 | Import and deployment | Import done (7.1); the deployment guide planned | Importing the owner's workbook: the files and the four registers, staged with every problem by line, reviewed, written whole (D-053); the on-premises deployment guide |
 | later | Integration | Deferred | The recruitment system (OD-6) |
 
 ## 3. Tech stack
@@ -174,6 +174,17 @@ app/
     │   ├── Models/         EmployeeDocument
     │   ├── Support/        DocumentCatalogue (the 13 kinds and the conduct document), DocumentStorage,
     │   │                   DocumentSlots, DocumentSlot, DocumentKind, DocumentQueries
+    │   └── routes.php
+    ├── Imports/
+    │   ├── Actions/        StageImport, DecideImport (approve, reject, cancel), ApplyImport
+    │   ├── Console/        ApplyImportCommand (imports:apply)
+    │   ├── Database/       Migrations (1)
+    │   ├── Enums/          ImportStatus, RowStatus, ImportSheet, Duplicates
+    │   ├── Http/           ImportController, Requests, Resources (Import, ImportRow)
+    │   ├── Models/         Import, ImportRow
+    │   ├── Notifications/  ImportFinished
+    │   ├── Support/        WorkbookReader, ImportColumns, ImportCell, FormulaValue, ImportLookups, ImportStager,
+    │   │                   ImportRowFailed
     │   └── routes.php
     ├── Reports/
     │   ├── Forms/          FormCatalogue, EmployeeForm, FormPdf
@@ -1039,10 +1050,96 @@ page), `RecordsExport` (1,000 records a page, the register's query), `MovementsS
 | `reports.form_printed` | طباعة استمارة موظف (PDF) | employee, form, year |
 | `exports.downloaded` | تصدير بيانات إلى Excel | kind (`employees`, `records.{type}`, `movements_summary`), filters, rows |
 
-## 15. Testing
+## 15. Imports module (Step 7, D-053)
+
+`app/Modules/Imports`: the owner's workbook staged row by row, reviewed, then written whole.
+
+### 15.1 Tables
+
+**`imports`**: `id`, `file_name`, `size_bytes`, `sha256`, `duplicates` (skip, update), `status` (pending, applying,
+approved, failed, rejected, cancelled), `sheets` (jsonb: each sheet's kind, name, header row, columns and counts),
+`counts` (jsonb: the totals and by sheet), `uploaded_by`, `uploaded_at`, `decided_by`, `decided_at`,
+`decision_note`, `applied_at`, `applied` (jsonb: what it made), `failure` (jsonb: sheet, line, message), timestamps.
+CHECKs on the status, the duplicates, the hash, a decision for anything not pending, a reason for a refusal,
+`applied_at` exactly when approved; one import of a file being applied or approved (partial unique index on the
+hash).
+
+**`import_rows`**: `import_id`, `sheet`, `line`, `status` (valid, review, invalid, excluded), `action` (create,
+update, add, correct, skip), `personal_number`, `employee_id`, `record_id`, `cells` (title => text), `values` (field
+=> normal value; a file's `_reviews`: cycle => date), `changes` (field => from, to), `issues`
+(`[{level, field, message}]`). Unique by import, sheet and line.
+
+Trigger `imports_guard`: no DELETE or TRUNCATE of either; what was uploaded never changes; a decided import is not
+decided again; one being applied ends approved or failed; a staged row changes only to learn what it made.
+`employee_change_sets.import_id` and `record_change_sets.import_id` mark what an import wrote.
+
+### 15.2 Reading and staging
+
+| Class | Does |
+| ----- | ---- |
+| `WorkbookReader` | Streams the known sheets with OpenSpout, keeping Excel's line numbers; finds the header among the first 12 rows; a formula cell is a `FormulaValue` (its last computed value) |
+| `ImportColumns` | A title (search key) => what it is: a field, «الرقم الذاتي», one of the six unit levels, «جهة العمل الحالية - مستوى تنظيمي 2 / 3», «آخر مراجعة - …», a document link, «اسم الموظف» (checked), a movement's «عدد الأيام» (checked), a formula (ignored); the required columns of each sheet |
+| `ImportCell` | A cell as text, a date (Excel's, its serial, or `Y-m-d`, `Y/m/d`, `d/m/Y`, `d-m-Y`), yes / no |
+| `ImportLookups` | List items by label and units by path, any spelling, archived ones refused, one query per list |
+| `ImportStager` | The rules of section 15.3, a fixed number of queries per sheet: the values with `FieldValues` / `RecordValues` (the items found active already), the stored employees, numbers and records read in chunks of 1,000 |
+
+`StageImport` refuses a file that is not an .xlsx or holds `xl/vbaProject.bin`, one already imported or waiting, and
+whatever `ImportStager` refuses; it writes the import and its rows (500 an insert).
+
+### 15.3 What a row can be
+
+| Sheet | «غير صالحة» | «تحتاج مراجعة» | «مستبعدة» |
+| ----- | ----------- | -------------- | --------- |
+| Employees | a value against its rules; not in its list, or archived; a unit path not in the structure (or with a gap); the number empty or twice in the file; the national number twice, another stored file's, or waiting elsewhere; a new file without its national number or three names; a contract ending before it starts; a review date in the future; (update) a locked identity value that differs | the same name and birth date as a stored file or another line; «مسرح» without «تاريخ التسريح»; «فعال» but gone; a phone typed as a number; (update) a file with changes waiting | (skip) a stored employee: its differences listed; (update) nothing differs |
+| Registers | the number empty, unknown, not approved, or its file invalid in this import; a value against its rules; a register's rule (D-042); a month twice in the file | «اسم الموظف» not the file's; a movement's typed days not its period's; the same as another line | a record identical to a stored one; (skip) a stored month, its differences listed |
+
+Info only: a document link (not imported), an older «آخر مراجعة», a movement as history.
+
+### 15.4 Writing (`ApplyImport`)
+
+After the response (`dispatch(...)->afterResponse()`), one transaction: the files by line (`SubmitEmployeeChanges::
+fromImport`: create, or the fields that differ), «آخر مراجعة» as a review set and an `employee_reviews` row on that
+day (unless its period is confirmed), then each register 500 rows a set (`SubmitRecordChanges::fromImport`). The
+uploader submits, the reviewer approves (`self_approved` when the same person), the import marks every set. An
+imported identity is not locked (`ApplyChangeSet` skips the lock for an import's set); an imported movement is taken
+without changing the file (`ApplyRecordChangeSet` with `$toFile = false`), and its record is saved without a
+savepoint (thousands of savepoints would each hold a lock to the end). A refused row (`ImportRowFailed`) rolls the
+whole import back; the import is then `failed` with its sheet, line and message. `imports:apply {id}` writes an
+import left `applying` (the server stopped while writing it). Memory: `HR_IMPORT_MEMORY` (1024M), no time limit.
+
+### 15.5 API reference
+
+| Method | Path | Permission | Notes |
+| ------ | ---- | ---------- | ----- |
+| GET | `/imports` | `imports.manage` or `entries.review` | «سجل الإستيراد السابق»: `status`, `mine`, paged (25), newest first |
+| POST | `/imports` | `imports.manage` | multipart: `file` (.xlsx, at most `HR_IMPORT_MAX_KB`, 20 MB), `duplicates` (skip by default, update); 201 with the import, or 422 `file` with why it is refused |
+| GET | `/imports/{id}` | `imports.manage` or `entries.review` | The import with `counts` and each sheet's `columns` (matched, computed, link, unmatched; `target`, `target_label`) |
+| GET | `/imports/{id}/rows` | `imports.manage` or `entries.review` | «معاينة البيانات»: `sheet`, `status`, `personal_number`, paged (50) by sheet and line: `line`, `status`, `action`, `cells`, `changes`, `issues` |
+| POST | `/imports/{id}/approve` | `entries.review` | `note`; 422 while a row is invalid; `status` becomes applying, then approved or failed |
+| POST | `/imports/{id}/reject` | `entries.review` | `reason` (3 to 2,000); the uploader is notified |
+| POST | `/imports/{id}/cancel` | the uploader | |
+
+The sidebar's `/badges` gains `reviews.imports` (waiting imports) and counts one's own in `mine.pending`. The
+notification `import_finished` (`import_id`, `status`, `file_name`, `failure`) goes to the uploader and the reviewer.
+
+### 15.6 Audit events
+
+| Event | Label | Context |
+| ----- | ----- | ------- |
+| `imports.uploaded` | رفع ملف للاستيراد | the import, file name, size, hash, duplicates, counts |
+| `imports.approved` | اعتماد استيراد | the import, counts |
+| `imports.applied` | اكتمال استيراد | the import, what it made |
+| `imports.failed` | فشل استيراد | the import, sheet, line, message |
+| `imports.rejected` | ردّ استيراد | the import, reason |
+| `imports.cancelled` | إلغاء استيراد | the import |
+
+Each change set it wrote has its own `employees.change_submitted` / `records.change_submitted` and `…_approved`
+events with `import_id`.
+
+## 16. Testing
 
 `php artisan test` (PostgreSQL database `hr_test`, `RefreshDatabase`, the catalogues seeded through
-`DatabaseSeeder` for every test; the field guide's per-request cache cleared): **181 tests**. Fixed device keys in `tests/Support/TestDeviceKeys.php` (D-020); helpers in
+`DatabaseSeeder` for every test; the field guide's per-request cache cleared): **189 tests**. Fixed device keys in `tests/Support/TestDeviceKeys.php` (D-020); helpers in
 `tests/Support/StaffTestHelpers.php` (`staffUser($role)`, `admin()`, `pendingDevice()`, `approvedDevice()`,
 `loginThrough()` (challenge and signed login through the API), `actingAsStaff()`).
 
@@ -1074,6 +1171,7 @@ page), `RecordsExport` (1,000 records a page, the register's query), `MovementsS
 | `Feature/Documents/DocumentTest` | The 14 kinds and the five counted; data entry's upload waits (stored by its id, the queue, the badges), the supervisor approves and the completeness follows; a reviewer's upload replaces the current file, the old one superseded and readable, the same content refused; a refusal needs a reason, purges the content, tells the uploader, 410 on download; the uploader alone withdraws; the type from the content, the size limit; the administrator alone removes, with a reason; the download's headers and its security log, `documents.view` needed; a conduct record's document on its record; a document's ✔ from the guide; the database refuses deleting or changing an upload |
 | `Feature/Reports/DashboardTest` | `reports.view` only; the overview's tiles, job statuses with their share, contracts, missing fields, a unit with or without its sub-units, contracts ending soon and files behind on their reviews; the employees dashboard's groups, tiles by item (a renamed item keeps its tile, an added one gets one), its filters, ages, salaries, «طالب حالياً»; the movements dashboard for a year and a month, each leave type, the net, conduct and absence, the chosen employee; one row per file with the year's leave balance and its rating, sorted by the net |
 | `Feature/Reports/FormAndExportTest` | The three forms with the approved values as people read them (a waiting change not printed), the attachments' rows, the status report's year and latest records, the PDF of each (logged), no form for a file not approved; the employees export (every field, a formula kept as text, the list's filters, logged with its rows), a register's and the movements summary's exports, data entry not exporting |
+| `Feature/Imports/ImportTest` | Each sheet's columns matched by title (computed, link, unmatched); every row staged with its line and problems: a value not in its list, a unit not in the structure, a bad national number, a contract out of order, not yes / no, a number twice in the file, another file's national number, a likely duplicate, «مسرح» without its date, a phone typed as a number, a stored employee skipped with its differences, a new file without a name, a review date in the future; a register's unknown or invalid employee, a list value in another spelling, a typed day count, an identical line, a name that differs, a movement as history, a formula-only line ignored; no approval while a row is invalid. An approved import writes the files (identity not locked), their reviews, the movements (taken, the file unchanged) and attendance as change sets of the import, uploader and reviewer kept, rows know what they made, the uploader told, the log; the same file twice refused; update mode corrects a file and a month but never a locked identity, and finds nothing to do the second time; refusals of the whole file (not .xlsx, macros, no known sheet, missing columns, no row); who uploads, reviews, cancels, sends back (notified); a row refused when written rolls everything back and names its line; the tables keep their history |
 | `Unit/ArabicTextTest`, `Unit/BusinessDayTest` | Digits, search key; the next Damascus midnight, a day's UTC bounds |
 
 API documentation check: `php artisan scramble:analyze` must report no warnings. Code style: `./vendor/bin/pint`.
@@ -1081,11 +1179,13 @@ API documentation check: `php artisan scramble:analyze` must report no warnings.
 The whole login was also run over HTTP with `tools/device-client.mjs` against `php artisan serve`: registration,
 console approval, signed login, a call with the token, the audit log.
 
-## 16. Known limitations and pending work
+## 17. Known limitations and pending work
 
-- The import comes in Step 7 (section 2).
-- Uploads are checked for their type only; there is no antivirus scan on the server. The workbook's existing links
-  come with the import (Step 7).
+- The deployment guide (nginx with `fastcgi_read_timeout` long enough for an import's staging, PHP-FPM without
+  `request_terminate_timeout` for its writing, backups of the database and `storage/app/documents`) comes in Step 7.2.
+- Uploads are checked for their type only; there is no antivirus scan on the server. The workbook's document links
+  are not imported (a link is not a file): the import lists them; the files are uploaded on each employee's file.
+- An import's column matching is automatic (by title); there is no manual mapping of an unknown column.
 - The PDF uses DejaVu Sans, which mPDF ships: Arabic-Indic digits (٠١٢) have no glyphs in it, so values keep the
   Latin digits the API stores. An export's or a form's filters are what the screen sends; nothing is scheduled.
 - A document's content is a file on the server's disk: backing up `storage/app/documents` with the database belongs
@@ -1105,7 +1205,7 @@ console approval, signed login, a call with the token, the audit log.
 - Migrations may still change in place until the first production installation; from then on they are append-only
   (recruitment D-101).
 
-## 17. Changelog
+## 18. Changelog
 
 | Step | Summary |
 | ---- | ------- |
@@ -1120,3 +1220,4 @@ console approval, signed login, a call with the token, the audit log.
 | 4.2 | The hiring system's `name_ar` for list items and units (and `{id, name_ar, archived}` values in the file, the register and the records) and `POST /new` for staff users (D-047). «الرقم الوطني» required on a new file; every field of a new file and of a change in the API document, generated from the catalogue; «تاريخ التقديم» = the file's approval date (OD-24). A movement updates the file (D-048, OD-23): targets on the movement, effects by type, applied when approved and due or by `records:apply-due-movements`, «تطبيق حركة» in the file's history. 160 tests |
 | 5 | The employees' documents (D-049): the workbook's 13 attachments as uploads on a private disk, one row each, never deleted, content checked by type and hash; reviewed like the file (data entry's wait, a reviewer's at once, a refusal notifies, the uploader withdraws), the approved one replacing the current file and the old kept as superseded; removal by the administrator with a reason; downloads streamed safely and logged as security events; the 13 in the field guide as `document` definitions, so completeness counts the workbook's 73; a conduct record's document; the file's `documents_attached`, the badges' `reviews.documents`. «صلة السكن بجهة الطوارئ» not added (OD-25). 171 tests |
 | 6 | The forms, the dashboards and the exports. The three printed sheets of an employee as rows for the screen and as an A4 PDF from the server, logged (D-050). «لوحة التحكم» with its contracts and review lists, «داش بورد الموظفين» with a tile for every list item (renames and additions followed), «داش بورد الحركات» with its per-employee summary, all in SQL over the approved files and kept records (D-051). Streamed Excel exports of the employees, the registers and the summary, text never a formula, logged with filters and rows (D-052). mPDF and OpenSpout added. OD-26 answered (no period filter, no «complete» attendance); the import's scope is OD-27. A movement type's code read once (the register's pages were one query a movement). 181 tests |
+| 7.1 | The import (D-053; OD-27 answered: the files and the four registers, each if present). The workbook's sheets found by name and their columns by title; every row staged with its line, its status («صالحة», «تحتاج مراجعة», «غير صالحة», «مستبعدة») and each problem in Arabic: values, lists, units, numbers twice or taken, likely duplicates, locked identities, the registers' employees and rules, what differs from what is stored; skip or update for what is stored; the whole file refused when it is not an .xlsx, holds macros, was imported, or lacks a column. Reviewed (`entries.review`), never approved with an invalid row, written after the response in one transaction as the files' and registers' own change sets marked with the import; imported identities not locked, imported movements taken without changing the files; `imports:apply`. A change set's items in one insert; an import's records without savepoints. 189 tests |

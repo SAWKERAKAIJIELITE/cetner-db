@@ -52,6 +52,12 @@ final class AuditEvents
         'documents.downloaded' => 'تنزيل وثيقة أو عرضها',
         'reports.form_printed' => 'طباعة استمارة موظف (PDF)',
         'exports.downloaded' => 'تصدير بيانات إلى Excel',
+        'imports.uploaded' => 'رفع ملف للاستيراد',
+        'imports.approved' => 'اعتماد استيراد',
+        'imports.applied' => 'اكتمال استيراد',
+        'imports.failed' => 'فشل استيراد',
+        'imports.rejected' => 'ردّ استيراد',
+        'imports.cancelled' => 'إلغاء استيراد',
     ];
 
     public static function label(string $event): string

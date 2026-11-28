@@ -15,6 +15,7 @@ use Illuminate\Support\Carbon;
  * One submission of records of one kind (D-041): a single change or a batch. Pending until a reviewer decides,
  * then the history. Decided once (a trigger), never deleted.
  *
+ * @property ?string $import_id the import it came from (D-053)
  * @property string $id
  * @property RecordType $record_type
  * @property ChangeSetStatus $status

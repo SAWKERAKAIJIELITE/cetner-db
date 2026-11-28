@@ -16,7 +16,7 @@ final class Badges
     /**
      * @return array{
      *     notifications: array{unread: int},
-     *     reviews: array{employee_changes: int, record_changes: int, documents: int, total: int}|null,
+     *     reviews: array{employee_changes: int, record_changes: int, documents: int, imports: int, total: int}|null,
      *     identity: array{to_review: int, to_lock: int}|null,
      *     mine: array{pending: int},
      *     employees: array{contracts_ending_soon: int, monthly_overdue: int}|null
@@ -33,7 +33,10 @@ final class Badges
         $recordChanges = fn () => (int) DB::table('record_change_sets')->where('status', $pending)->where('submitted_by', '!=', $user->id)->count();
         $reviews = $user->hasPermission('entries.review')
             ? ['employee_changes' => $e = $employeeChanges(), 'record_changes' => $r = $recordChanges(),
-                'documents' => $d = DocumentQueries::pendingFor($user->id), 'total' => $e + $r + $d]
+                'documents' => $d = DocumentQueries::pendingFor($user->id),
+                // Imports waiting: a reviewer may approve their own (it applies at once, D-053).
+                'imports' => $i = (int) DB::table('imports')->where('status', 'pending')->count(),
+                'total' => $e + $r + $d + $i]
             : null;
 
         $identity = $user->hasPermission('identity.review') ? [
@@ -45,7 +48,8 @@ final class Badges
 
         $mine = (int) DB::table('employee_change_sets')->where('status', $pending)->where('submitted_by', $user->id)->count()
             + (int) DB::table('record_change_sets')->where('status', $pending)->where('submitted_by', $user->id)->count()
-            + DocumentQueries::pendingBy($user->id);
+            + DocumentQueries::pendingBy($user->id)
+            + (int) DB::table('imports')->where('status', 'pending')->where('uploaded_by', $user->id)->count();
 
         // The same reading as the register's `overdue_cycle=monthly` filter.
         $since = $today->subDays((int) WorkSettings::current()->getAttribute(Cycle::Monthly->windowColumn()))->format('Y-m-d');

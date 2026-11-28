@@ -26,7 +26,8 @@ final class ApplyRecordChangeSet
 {
     public function __construct(private readonly ApplyMovementToFile $movements) {}
 
-    public function handle(RecordChangeSet $set, StaffUser $reviewer, bool $selfApproved, ?string $note = null): void
+    /** `$toFile`: false for an import's movements, which are history and do not change the file (D-053). */
+    public function handle(RecordChangeSet $set, StaffUser $reviewer, bool $selfApproved, ?string $note = null, bool $toFile = true): void
     {
         $type = $set->record_type;
         $items = $set->items()->get();
@@ -91,7 +92,11 @@ final class ApplyRecordChangeSet
         }
 
         // Approved movements due today or earlier update their files now (D-048), oldest first.
-        if ($type === RecordType::Movements) {
+        if ($type === RecordType::Movements && ! $toFile) {
+            // Taken as they are: the daily job leaves them alone, and the file stays the workbook's.
+            EmployeeMovement::query()->whereIn('id', $items->where('action', RecordAction::Create)->pluck('record_id')->all())
+                ->update(['applied_to_file_at' => $now]);
+        } elseif ($type === RecordType::Movements) {
             $created = $items->where('action', RecordAction::Create)->pluck('record_id')->all();
 
             EmployeeMovement::query()->whereIn('id', $created)->orderBy('occurred_on')->orderBy('id')->get()
@@ -120,7 +125,9 @@ final class ApplyRecordChangeSet
         ]);
 
         try {
-            DB::transaction(fn () => $record->save());
+            // A savepoint keeps a reviewer's transaction usable after a refused row; an import is refused whole, and
+            // thousands of savepoints would each hold a lock to the end (D-053).
+            $set->getAttribute('import_id') === null ? DB::transaction(fn () => $record->save()) : $record->save();
         } catch (QueryException $e) {
             // Two months of attendance racing: the unique index decides; say it in Arabic.
             if (($e->errorInfo[0] ?? null) === '23505' && str_contains($e->getMessage(), 'employee_attendance_one_per_month')) {

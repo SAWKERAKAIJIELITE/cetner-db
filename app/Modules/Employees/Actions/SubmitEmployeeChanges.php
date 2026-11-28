@@ -101,6 +101,48 @@ final class SubmitEmployeeChanges
     }
 
     /**
+     * A row of an approved import (D-053): a new file, or the fields of a stored one that differ, applied at once by
+     * the import's reviewer and marked with the import. The rules are a submission's: the values, the identity lock,
+     * the contract's order, unique numbers. An imported identity is not locked: the administrator locks it after
+     * checking it (D-034). Null when nothing differs.
+     *
+     * @param  array<string, mixed>  $values
+     */
+    public function fromImport(?Employee $employee, array $values, string $note, StaffUser $uploader, StaffUser $approver, string $importId): ?EmployeeChangeSet
+    {
+        $values = FieldValues::validate($values);
+
+        if ($employee === null) {
+            $missing = array_filter(self::REQUIRED_TO_CREATE, fn (string $key) => ($values[$key] ?? null) === null);
+
+            if ($missing !== []) {
+                throw ValidationException::withMessages(['values' => __('validation.required', ['attribute' => FieldCatalogue::get(reset($missing))['label']])]);
+            }
+
+            $employee = new Employee;
+            $employee->forceFill(['created_by' => $uploader->getKey()])->save();
+            $items = array_filter($values, fn ($value) => $value !== null);
+            $this->ensureContractOrder($employee, $items);
+            $this->ensureUnique($items, $employee);
+
+            return $this->record($employee, ChangeSetKind::Create, null, null, $items, [], $note, $uploader, false, $approver, $importId);
+        }
+
+        $employee = $this->lockActive($employee);
+        [$items, $old] = $this->changes($employee, $values);
+
+        if ($items === []) {
+            return null;
+        }
+
+        IdentityLock::ensureChangeable($employee, $items);
+        $this->ensureContractOrder($employee, $items);
+        $this->ensureUnique($items, $employee);
+
+        return $this->record($employee, ChangeSetKind::Update, null, null, $items, $old, $note, $uploader, false, $approver, $importId);
+    }
+
+    /**
      * Confirm a cycle for the current period, with the changes found (or none). Only the cycle's fields.
      *
      * @param  array<string, mixed>  $values
@@ -220,7 +262,7 @@ final class SubmitEmployeeChanges
         }
     }
 
-    private function record(Employee $employee, ChangeSetKind $kind, ?Cycle $cycle, ?string $period, array $items, array $old, ?string $note, StaffUser $author, bool $identity): EmployeeChangeSet
+    private function record(Employee $employee, ChangeSetKind $kind, ?Cycle $cycle, ?string $period, array $items, array $old, ?string $note, StaffUser $author, bool $identity, ?StaffUser $approver = null, ?string $importId = null): EmployeeChangeSet
     {
         $set = new EmployeeChangeSet;
         $set->forceFill([
@@ -233,13 +275,20 @@ final class SubmitEmployeeChanges
             'note' => $note === null || trim($note) === '' ? null : trim($note),
             'submitted_by' => $author->getKey(),
             'submitted_at' => now(),
+            'import_id' => $importId,
         ])->save();
 
-        foreach ($items as $field => $value) {
-            $set->items()->save(new EmployeeChangeItem(['field' => $field, 'old_value' => $old[$field] ?? null, 'new_value' => $value]));
-        }
+        // One insert for the set's items (the json cast's encoding).
+        EmployeeChangeItem::query()->insert(array_map(fn ($field, $value) => [
+            'change_set_id' => $set->getKey(),
+            'field' => $field,
+            'old_value' => json_encode($old[$field] ?? null),
+            'new_value' => json_encode($value),
+        ], array_keys($items), $items));
 
-        $applied = $kind === ChangeSetKind::Movement || ReviewRights::appliesAtOnce($author, $identity);
+        // An import's rows were approved with the import, by its reviewer.
+        $applied = $kind === ChangeSetKind::Movement || $importId !== null || ReviewRights::appliesAtOnce($author, $identity);
+        $approver ??= $author;
 
         AuditTrail::record('employees.change_submitted', $author, [
             'employee_id' => $employee->getKey(),
@@ -250,15 +299,18 @@ final class SubmitEmployeeChanges
             'fields' => array_keys($items),
             'needs_identity_review' => $identity,
             'applied_at_once' => $applied,
+            'import_id' => $importId,
         ]);
 
         if ($applied) {
-            $this->apply->handle($set, $employee, $author, true);
+            $self = $approver->getKey() === $author->getKey();
+            $this->apply->handle($set, $employee, $approver, $self);
 
-            AuditTrail::record('employees.change_approved', $author, [
+            AuditTrail::record('employees.change_approved', $approver, [
                 'employee_id' => $employee->getKey(),
                 'change_set_id' => $set->getKey(),
-                'self_approved' => true,
+                'self_approved' => $self,
+                'import_id' => $importId,
             ]);
         }
 

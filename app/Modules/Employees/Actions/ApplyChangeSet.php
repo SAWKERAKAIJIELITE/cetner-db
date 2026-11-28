@@ -58,7 +58,8 @@ final class ApplyChangeSet
 
         if (IdentityLock::isLocked($employee)) {
             IdentityLock::refreshFingerprint($employee);
-        } elseif ($reviewer->hasPermission('identity.review') && ($set->kind === ChangeSetKind::Create || $touchesIdentity)) {
+        } elseif ($set->getAttribute('import_id') === null && $reviewer->hasPermission('identity.review') && ($set->kind === ChangeSetKind::Create || $touchesIdentity)) {
+            // An imported identity waits for the administrator to check it (D-053).
             IdentityLock::lock($employee, $reviewer);
             $lockedNow = true;
         }

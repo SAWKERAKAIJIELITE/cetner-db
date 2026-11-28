@@ -23,9 +23,10 @@ final class FieldValues
      * Normalise and check submitted values. Unknown fields are refused; list items and units must be active.
      *
      * @param  array<string, mixed>  $values
+     * @param  bool  $checkItems  false when the caller found the list items and units active already (the import, D-053)
      * @return array<string, mixed> field => normal value
      */
-    public static function validate(array $values): array
+    public static function validate(array $values, bool $checkItems = true): array
     {
         $unknown = array_diff(array_keys($values), FieldCatalogue::keys());
 
@@ -48,8 +49,8 @@ final class FieldValues
         }
 
         $validator = Validator::make(['values' => $prepared], $rules, [], $names);
-        $validator->after(function ($validator) use ($prepared) {
-            foreach ($prepared as $key => $value) {
+        $validator->after(function ($validator) use ($prepared, $checkItems) {
+            foreach ($checkItems ? $prepared : [] as $key => $value) {
                 if ($value === null || $validator->errors()->has('values.'.$key)) {
                     continue;
                 }

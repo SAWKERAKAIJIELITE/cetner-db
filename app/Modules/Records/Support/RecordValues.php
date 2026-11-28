@@ -23,7 +23,8 @@ final class RecordValues
      * @param  array<string, mixed>  $values
      * @return array<string, mixed> field => normal value
      */
-    public static function validate(RecordType $type, array $values, string $prefix = 'values'): array
+    /** `$checkItems`: false when the caller found the list items and units active already (the import, D-053). */
+    public static function validate(RecordType $type, array $values, string $prefix = 'values', bool $checkItems = true): array
     {
         $fields = RecordCatalogue::fields($type);
         $unknown = array_diff(array_keys($values), array_keys($fields));
@@ -47,8 +48,8 @@ final class RecordValues
         }
 
         $validator = Validator::make(['v' => $prepared], $rules, [], $names);
-        $validator->after(function ($validator) use ($prepared, $fields) {
-            foreach ($prepared as $key => $value) {
+        $validator->after(function ($validator) use ($prepared, $fields, $checkItems) {
+            foreach ($checkItems ? $prepared : [] as $key => $value) {
                 if ($value === null || $validator->errors()->has('v.'.$key) || ! in_array($fields[$key]['type'], ['list', 'unit'], true)) {
                     continue;
                 }
@@ -86,7 +87,7 @@ final class RecordValues
      *
      * @param  array<string, mixed>  $record  field => normal value
      */
-    public static function ensureConsistent(RecordType $type, array $record, string $prefix = 'values', float $paymentsTotal = 0): void
+    public static function ensureConsistent(RecordType $type, array $record, string $prefix = 'values', float $paymentsTotal = 0, bool $targets = true): void
     {
         $errors = [];
         $v = fn (string $key) => $record[$key] ?? null;
@@ -101,7 +102,8 @@ final class RecordValues
             }
 
             // What the movement makes of the file, by its type (D-048).
-            if ($v('movement_type_id') !== null) {
+            // An imported movement is history and changes nothing (D-053): the workbook has no targets.
+            if ($targets && $v('movement_type_id') !== null) {
                 $errors += MovementEffects::check((int) $v('movement_type_id'), $record, $prefix);
             }
 

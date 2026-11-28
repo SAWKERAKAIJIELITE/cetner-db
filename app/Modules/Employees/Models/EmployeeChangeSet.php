@@ -17,6 +17,7 @@ use Illuminate\Support\Carbon;
  * One submission (D-033): a new employee, changes, or a cycle's confirmation. Pending until a reviewer
  * decides; then it is the history. Decided once (a trigger), never deleted.
  *
+ * @property ?string $import_id the import it came from (D-053)
  * @property string $id
  * @property string $employee_id
  * @property ChangeSetKind $kind

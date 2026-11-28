@@ -16,4 +16,9 @@ return [
     // weighs, in kilobytes (the design's 5 MB).
     'documents_disk' => env('HR_DOCUMENTS_DISK', 'documents'),
     'documents_max_kb' => (int) env('HR_DOCUMENTS_MAX_KB', 5120),
+
+    // The import (Step 7): the most an uploaded workbook weighs, in kilobytes. The owner's empty workbook is 4.3 MB.
+    'import_max_kb' => (int) env('HR_IMPORT_MAX_KB', 20480),
+    // Reading and writing an import holds its rows: 4,000 files and 24,000 records take about 150 MB.
+    'import_memory' => env('HR_IMPORT_MEMORY', '1024M'),
 ];
