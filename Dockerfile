@@ -4,6 +4,8 @@ FROM serversideup/php:8.4-fpm-nginx
 # The Laravel scheduler runs in this same container as a supervised s6 service next to nginx and php-fpm,
 # so the deployment has one built service.
 USER root
+# gd is required by mpdf/mpdf (PDF exports).
+RUN install-php-extensions gd
 RUN set -eux; \
     svc=/etc/s6-overlay/s6-rc.d/laravel-scheduler; \
     mkdir -p "$svc/dependencies.d"; \
